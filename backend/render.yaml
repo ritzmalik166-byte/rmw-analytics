@@ -1,0 +1,25 @@
+# Render Blueprint. If backend/ is not the repo root, set rootDir accordingly.
+services:
+  - type: web
+    name: rmw-analytics-api
+    runtime: node
+    rootDir: analytics-platform/backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - { key: NODE_VERSION, value: "20" }
+      - { key: NODE_ENV, value: production }
+      - { key: TRUST_PROXY, value: "1" }
+      - { key: AUTO_MIGRATE, value: "true" }
+      - { key: RUN_JOBS_IN_PROCESS, value: "true" }
+      - { key: COOKIE_SECURE, value: "true" }
+      - { key: ALLOW_SIGNUP, value: "false" }
+      - { key: MONGODB_DB, value: rmw_analytics }
+      - { key: MONGODB_URI, sync: false }          # MongoDB Atlas connection string
+      - { key: PUBLIC_API_URL, sync: false }       # https://<service>.onrender.com
+      - { key: APP_URL, sync: false }              # https://<project>.vercel.app
+      - { key: DASHBOARD_ORIGINS, sync: false }    # https://<project>.vercel.app
+      - { key: SESSION_SECRET, generateValue: true }
+      - { key: PII_ENCRYPTION_KEY, generateValue: true }
+      - { key: IDENTITY_HASH_SECRET, generateValue: true }
