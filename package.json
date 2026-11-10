@@ -1,0 +1,26 @@
+{
+  "name": "rmw-analytics-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Universal website analytics & visitor intelligence platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "database"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:mongo": "node database/src/dev-mongo.js",
+    "dev:api": "npm run dev -w @rmw-analytics/api",
+    "dev:worker": "npm run worker:dev -w @rmw-analytics/api",
+    "dev:dashboard": "npm run dev -w @rmw-analytics/dashboard",
+    "dev:docs": "npm run dev -w @rmw-analytics/docs",
+    "build:tracker": "npm run build -w @rmw-analytics/tracker",
+    "build": "npm run build:tracker && npm run build -w @rmw-analytics/dashboard && npm run build -w @rmw-analytics/docs",
+    "migrate": "npm run migrate -w @rmw-analytics/database",
+    "seed": "npm run seed -w @rmw-analytics/api",
+    "test": "npm test -w @rmw-analytics/shared && npm test -w @rmw-analytics/tracker && npm test -w @rmw-analytics/api"
+  }
+}

@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RMW CRM design system: structured "portal" look. Navy primary, neutral surfaces,
+   hairline borders, minimal shadow, compact density. */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 215 30% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 30% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 30% 15%;
+    --primary: 213 62% 26%;            /* navy #194173 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 25% 95%;
+    --secondary-foreground: 215 30% 18%;
+    --muted: 214 25% 96%;
+    --muted-foreground: 215 14% 42%;
+    --accent: 213 45% 95%;
+    --accent-foreground: 213 62% 22%;
+    --destructive: 0 68% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 86%;
+    --input: 214 18% 80%;
+    --ring: 213 62% 36%;
+    --radius: 0.25rem;
+    --page: 216 22% 95%;               /* app background */
+    --saffron: 28 92% 52%;             /* thin accent line only */
+  }
+  * { @apply border-border; }
+  html { font-size: 14px; }
+  body { @apply text-foreground antialiased; background: hsl(var(--page)); font-size: 13px; }
+  h1, h2, h3 { letter-spacing: -0.005em; }
+}
+
+@layer components {
+  .panel { @apply rounded border bg-white; }
+  .panel-head { @apply flex items-center justify-between gap-2 border-b bg-[hsl(214_25%_97%)] px-3 py-2; }
+  .panel-title { @apply text-[12px] font-semibold uppercase tracking-wide text-slate-600; }
+  .kv-label { @apply text-[11px] font-medium uppercase tracking-wide text-muted-foreground; }
+}

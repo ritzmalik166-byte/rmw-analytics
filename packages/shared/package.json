@@ -1,0 +1,17 @@
+{
+  "name": "@rmw-analytics/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./events": "./src/events.js",
+    "./privacy": "./src/privacy.js",
+    "./channels": "./src/channels.js",
+    "./schemas": "./src/schemas.js",
+    "./search": "./src/search.js"
+  },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "zod": "^3.23.8" }
+}

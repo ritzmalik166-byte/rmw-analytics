@@ -1,0 +1,86 @@
+# Full stack: MongoDB (replica set) · Redis · API · worker · dashboard · nginx (+ docs)
+#   cp docker/.env.example docker/.env   # fill in the secrets
+#   docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+# Then open http://localhost:8080 and create the first (owner) account.
+name: rmw-analytics
+
+x-api-env: &api-env
+  NODE_ENV: production
+  PORT: 4100
+  TRUST_PROXY: 1
+  MONGODB_URI: mongodb://mongo:27017/?replicaSet=rs0
+  MONGODB_DB: ${MONGODB_DB:-rmw_analytics}
+  REDIS_URL: redis://redis:6379
+  PUBLIC_API_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+  APP_URL: ${PUBLIC_URL}
+  DASHBOARD_ORIGINS: ${PUBLIC_URL}
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+  PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:?set PII_ENCRYPTION_KEY}
+  IDENTITY_HASH_SECRET: ${IDENTITY_HASH_SECRET:?set IDENTITY_HASH_SECRET}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
+  GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  MAIL_FROM: ${MAIL_FROM:-RMW Analytics <no-reply@example.com>}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  mongo:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-1}"]
+    volumes: [mongo-data:/data/db]
+    restart: unless-stopped
+    healthcheck:
+      # Initiates the single-node replica set on first boot, then reports healthy.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes: [redis-data:/data]
+    restart: unless-stopped
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 5 }
+
+  api:
+    build: { context: .., dockerfile: docker/api.Dockerfile }
+    image: rmw-analytics-api
+    environment:
+      <<: *api-env
+      AUTO_MIGRATE: "true"
+      RUN_JOBS_IN_PROCESS: "false"
+    depends_on: { mongo: { condition: service_healthy }, redis: { condition: service_healthy } }
+    restart: unless-stopped
+    deploy: { replicas: 1 }
+
+  worker:
+    image: rmw-analytics-api
+    command: ["node", "apps/api/src/worker.js"]
+    environment:
+      <<: *api-env
+      AUTO_MIGRATE: "false"
+    depends_on: { api: { condition: service_started } }
+    restart: unless-stopped
+
+  dashboard:
+    build: { context: .., dockerfile: docker/dashboard.Dockerfile, args: { API_URL: "http://api:4100" } }
+    image: rmw-analytics-dashboard
+    depends_on: [api]
+    restart: unless-stopped
+
+  nginx:
+    build: { context: .., dockerfile: docker/nginx.Dockerfile }
+    image: rmw-analytics-nginx
+    ports: ["${HTTP_PORT:-8080}:80"]
+    depends_on: [api, dashboard]
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  redis-data:

@@ -1,0 +1,22 @@
+{
+  "name": "@rmw-analytics/database",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "migrate": "node src/cli.js migrate",
+    "status": "node src/cli.js status",
+    "dev:mongo": "node src/dev-mongo.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mongodb": "^6.10.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.2"
+  }
+}

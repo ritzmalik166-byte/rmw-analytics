@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/out
+**/dist
+!packages/tracker/dist
+**/.env
+**/.env.*
+!**/.env.example
+.mongo-data
+.git
+*.log
+.api.log
+.dash.log

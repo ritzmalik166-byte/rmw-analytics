@@ -1,0 +1,288 @@
+'use client';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Bell, LogOut, Menu, X, Loader2, LayoutDashboard, Radio, Users2, Timer, MapPin, MonitorSmartphone, Globe2, FileText, MousePointerClick,
+  Search, Route, Flame, Share2, Megaphone, ClipboardList, Inbox, Filter, Server, BellRing, FileSpreadsheet, Settings, ChevronDown, Check, Building2, KeyRound,
+} from 'lucide-react';
+import { useAuth } from '@/providers/AuthProvider';
+import { FiltersProvider, useFilters } from '@/providers/FiltersProvider';
+import { api } from '@/lib/api';
+import { cn, timeAgo, toQuery } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/controls';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PageSkeleton, Skeleton } from '@/components/ui/feedback';
+import { WebsiteDot } from '@/components/analytics/WebsiteDot';
+
+export const NAV = [
+  { items: [
+    { href: '/overview', label: 'Overview', icon: LayoutDashboard },
+    { href: '/realtime', label: 'Real-time', icon: Radio, live: true },
+  ] },
+  { title: 'Audience', items: [
+    { href: '/visitors', label: 'Visitors', icon: Users2 },
+    { href: '/sessions', label: 'Sessions', icon: Timer },
+    { href: '/geography', label: 'Geography', icon: MapPin },
+    { href: '/devices', label: 'Devices', icon: MonitorSmartphone },
+    { href: '/browsers', label: 'Browsers', icon: Globe2 },
+  ] },
+  { title: 'Behaviour', items: [
+    { href: '/pages', label: 'Pages', icon: FileText },
+    { href: '/events', label: 'Events', icon: MousePointerClick },
+    { href: '/searches', label: 'Searches', icon: Search },
+    { href: '/journeys', label: 'User journeys', icon: Route },
+    { href: '/heatmaps', label: 'Heatmaps', icon: Flame },
+  ] },
+  { title: 'Acquisition', items: [
+    { href: '/sources', label: 'Traffic sources', icon: Share2 },
+    { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
+  ] },
+  { title: 'Conversion', items: [
+    { href: '/forms', label: 'Forms', icon: ClipboardList },
+    { href: '/leads', label: 'Leads', icon: Inbox, perm: 'leads:read' },
+    { href: '/funnels', label: 'Funnels', icon: Filter },
+  ] },
+  { title: 'Manage', items: [
+    { href: '/websites', label: 'Websites', icon: Server },
+    { href: '/alerts', label: 'Alerts', icon: BellRing },
+    { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
+    { href: '/settings', label: 'Settings', icon: Settings },
+  ] },
+];
+
+/** Pages whose content doesn't depend on the website filter keep their own URL without ?site. */
+const isPlainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+
+function LogoutDialog({ open, onOpenChange }) {
+  const { logout, loggingOut } = useAuth();
+  return (
+    <Dialog open={open} onOpenChange={(v) => !loggingOut && onOpenChange(v)}>
+      <DialogContent className="max-w-sm text-center sm:text-center">
+        <DialogHeader className="items-center">
+          <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600"><LogOut className="h-5 w-5" /></span>
+          <DialogTitle>Log out of RMW Analytics?</DialogTitle>
+          <DialogDescription>You will need to sign in again to view your analytics.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="sm:justify-center">
+          <Button variant="outline" disabled={loggingOut} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="destructive" loading={loggingOut} onClick={logout}>{loggingOut ? 'Logging out…' : 'Log out'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WebsiteSwitcher() {
+  const { site, setSite, websites, current, websitesLoading } = useFilters();
+  if (websitesLoading) return <Skeleton className="h-7 w-36 bg-white/20" />;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="flex h-8 max-w-[220px] items-center gap-2 rounded border border-white/25 bg-white/10 px-2.5 text-[12px] font-medium hover:bg-white/15" aria-label="Select website">
+          {current ? <WebsiteDot website={current} /> : <Globe2 className="h-3.5 w-3.5" />}
+          <span className="truncate">{current ? current.name : 'All websites'}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuLabel className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Website</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => setSite('all')}>
+          <Globe2 /><span className="flex-1">All websites</span>{site === 'all' && <Check className="text-primary" />}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {websites.map((w) => (
+          <DropdownMenuItem key={w.id} onSelect={() => setSite(w.id)}>
+            <WebsiteDot website={w} />
+            <span className="min-w-0 flex-1"><span className="block truncate">{w.name}</span><span className="block truncate text-[11px] text-muted-foreground">{w.domain}</span></span>
+            {site === w.id && <Check className="text-primary" />}
+          </DropdownMenuItem>
+        ))}
+        {!websites.length && <p className="px-2 py-3 text-xs text-muted-foreground">No websites yet.</p>}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild><Link href="/websites?new=1"><Server />Add website</Link></DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function LiveCount() {
+  const { query } = useFilters();
+  const { data } = useQuery({ queryKey: ['live-count', query.site], queryFn: () => api(`/realtime${toQuery({ site: query.site })}`), refetchInterval: 30_000 });
+  const n = data?.active ?? null;
+  return (
+    <Link href={`/realtime${toQuery({ site: query.site === 'all' ? undefined : query.site })}`} className="hidden items-center gap-1.5 rounded px-2 py-1 text-[12px] hover:bg-white/10 sm:flex" title="Visitors active in the last 5 minutes">
+      <span className={cn('h-2 w-2 rounded-full', n ? 'animate-pulse bg-emerald-400' : 'bg-white/40')} />
+      <span className="tabular-nums">{n ?? '–'}</span><span className="text-white/70">live</span>
+    </Link>
+  );
+}
+
+function AlertBell() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['alert-events', 'bell'], queryFn: () => api('/alerts/events?limit=8'), refetchInterval: 60_000 });
+  const markAll = useMutation({ mutationFn: () => api('/alerts/events/read', { method: 'POST' }), onSuccess: () => qc.invalidateQueries({ queryKey: ['alert-events'] }) });
+  const unread = data?.unread || 0;
+  return (
+    <DropdownMenu onOpenChange={(o) => { if (!o && unread) markAll.mutate(); }}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="relative" aria-label={`Alerts${unread ? `, ${unread} unread` : ''}`}>
+          <Bell />
+          {unread > 0 && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80 p-0">
+        <div className="border-b px-3 py-2 text-sm font-semibold">Alerts</div>
+        <div className="max-h-96 overflow-y-auto">
+          {!data?.rows?.length && <p className="px-3 py-8 text-center text-sm text-muted-foreground">No alerts have fired.</p>}
+          {data?.rows?.map((n) => (
+            <div key={n.id} className="border-b px-3 py-2.5 last:border-0">
+              <div className="flex items-start gap-2">
+                {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
+                <div className={cn('min-w-0', n.read && 'pl-4')}>
+                  <p className="text-[13px] font-medium">{n.name}</p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">{n.message}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{timeAgo(n.ts)}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t p-1"><DropdownMenuItem asChild className="justify-center text-xs"><Link href="/alerts">Manage alerts</Link></DropdownMenuItem></div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function Shell({ children }) {
+  const { me, can, switchOrg } = useAuth();
+  const pathname = usePathname();
+  const { site } = useFilters();
+  const [open, setOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState(null);
+  useEffect(() => { setPendingHref(null); }, [pathname]);
+  // Keep the selected website when moving between sections.
+  const hrefFor = (href) => (site && site !== 'all' && !['/websites', '/settings', '/alerts'].includes(href) ? `${href}?site=${site}` : href);
+  const navigate = (href) => (e) => { setOpen(false); if (isPlainClick(e) && href !== pathname) setPendingHref(href); };
+
+  const sidebar = (
+    <nav className="flex h-full flex-col bg-white">
+      <div className="flex-1 overflow-y-auto py-2">
+        {NAV.map((group) => (
+          <div key={group.title || 'main'} className="mb-1">
+            {group.title && <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>}
+            <ul>
+              {group.items.filter((i) => !i.perm || can(i.perm)).map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <li key={item.href}>
+                    <Link href={hrefFor(item.href)} onClick={navigate(item.href)} className={cn('relative flex items-center gap-2.5 px-4 py-[7px] text-[13px] transition-colors',
+                      active ? 'bg-[hsl(213_70%_95%)] font-semibold text-[hsl(var(--primary))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[hsl(var(--primary))]' : 'text-slate-700 hover:bg-slate-50')}>
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="border-t px-4 py-2 text-[10px] text-slate-400">RMW Analytics · {me?.org?.name}</div>
+    </nav>
+  );
+
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 bg-[hsl(var(--primary))] text-white">
+        <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
+          <button className="rounded p-1 hover:bg-white/10 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
+          <Link href="/overview" className="flex items-center gap-2">
+            <img src="/rmw-mark.png" alt="Ritz Media World" className="h-8 w-8 rounded-sm bg-white object-contain p-0.5" />
+            <span className="hidden leading-tight sm:block">
+              <span className="block text-[13px] font-semibold">RMW Analytics</span>
+              <span className="block text-[10px] text-white/70">Ritz Media World Group · Visitor Intelligence</span>
+            </span>
+          </Link>
+          <div className="ml-2 sm:ml-4"><WebsiteSwitcher /></div>
+          <div className="ml-auto flex items-center gap-1.5 [&_button]:text-white [&_button:hover]:bg-white/10">
+            <LiveCount />
+            <AlertBell />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 rounded px-1.5 py-1">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold ring-1 ring-white/30">{(me?.user?.fullName || '?').split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase()}</span>
+                  <span className="hidden text-left leading-tight md:block">
+                    <span className="block text-[12px] font-medium">{me?.user?.fullName}</span>
+                    <span className="block text-[10px] capitalize text-white/70">{me?.role}</span>
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="text-sm font-medium">{me?.user?.fullName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{me?.user?.email}</p>
+                  <p className="mt-1 text-[11px] capitalize text-muted-foreground">{me?.role} · {me?.org?.name}</p>
+                </DropdownMenuLabel>
+                {me?.organizations?.length > 1 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {me.organizations.map((o) => (
+                      <DropdownMenuItem key={o.id} onSelect={() => o.id !== me.org.id && switchOrg(o.id)}><Building2 /><span className="flex-1 truncate">{o.name}</span>{o.id === me.org.id && <Check className="text-primary" />}</DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild><Link href="/settings"><Settings />Settings</Link></DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/settings?tab=account"><KeyRound />Change password</Link></DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setLogoutOpen(true)}><LogOut />Log out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <div className="h-[3px] bg-[hsl(var(--saffron))]" />
+      </header>
+
+      <aside className="fixed bottom-0 left-0 top-[51px] z-20 hidden w-56 border-r lg:block">{sidebar}</aside>
+      {open && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 w-64 shadow-xl">
+            <div className="flex h-12 items-center justify-between bg-[hsl(var(--primary))] px-4 text-white">
+              <span className="text-[13px] font-semibold">RMW Analytics</span>
+              <button onClick={() => setOpen(false)} aria-label="Close menu"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="h-[calc(100%-3rem)]">{sidebar}</div>
+          </aside>
+        </div>
+      )}
+      <div className="lg:pl-56">
+        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">{pendingHref ? <PageSkeleton /> : children}</main>
+      </div>
+      <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
+    </div>
+  );
+}
+
+/** Requires sign-in; the API enforces the same rules independently. */
+export function AppShell({ children }) {
+  const { me, loading, loggingOut } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  useEffect(() => {
+    if (!loading && !me && !loggingOut) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [loading, me, loggingOut, router, pathname]);
+  if (loggingOut || loading || !me) {
+    return <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" />{loggingOut ? 'Logging out…' : 'Loading…'}</div>;
+  }
+  return (
+    <Suspense fallback={<div className="p-6"><PageSkeleton /></div>}>
+      <FiltersProvider><Shell>{children}</Shell></FiltersProvider>
+    </Suspense>
+  );
+}
