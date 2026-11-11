@@ -33,6 +33,7 @@ export async function api(path, { method = 'GET', body, signal, raw = false } = 
   const json = await res.json().catch(() => null);
   const outage = res.status === 502 || res.status === 504 || (res.status === 503 && (!json || json.errorCode === 'MAINTENANCE'));
   if (outage && typeof window !== 'undefined') {
+    window.__appMaintenance = { message: json?.message };
     window.dispatchEvent(new CustomEvent('app:maintenance', { detail: { message: json?.message } }));
   }
   if (!res.ok || json?.success === false) {

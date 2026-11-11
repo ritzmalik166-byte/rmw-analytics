@@ -12,16 +12,38 @@ export function MaintenanceGate({ appName = 'RMW Analytics', logo = '/rmw-mark.p
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
-    const on = (e) => { setDown(true); if (e.detail?.message) setMessage(e.detail.message); setLeft(RETRY_SECONDS); };
+    const show = (msg) => { setDown(true); if (msg) setMessage(msg); setLeft(RETRY_SECONDS); };
+    const on = (e) => show(e.detail?.message);
     window.addEventListener('app:maintenance', on);
-    return () => window.removeEventListener('app:maintenance', on);
+    // A request may have failed before this listener existed.
+    if (window.__appMaintenance) show(window.__appMaintenance.message);
+    // Check directly on load and whenever the tab becomes visible again (cached pages make no requests).
+    const probe = async () => {
+      try {
+        const res = await fetch(PING, { cache: 'no-store', credentials: 'include' });
+        if (res.status === 502 || res.status === 504) return show();
+        if (res.status === 503) {
+          const j = await res.json().catch(() => null);
+          if (!j || j.errorCode === 'MAINTENANCE') show(j?.message);
+        }
+      } catch { /* offline: leave it to the normal error handling */ }
+    };
+    probe();
+    const onVisible = () => { if (document.visibilityState === 'visible') probe(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', probe);
+    return () => {
+      window.removeEventListener('app:maintenance', on);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', probe);
+    };
   }, []);
 
   const check = useCallback(async () => {
     setChecking(true);
     try {
       const res = await fetch(PING, { cache: 'no-store', credentials: 'include' });
-      if (res.ok) { setDown(false); window.location.reload(); return; }
+      if (res.ok) { window.__appMaintenance = null; setDown(false); window.location.reload(); return; }
     } catch { /* still down */ }
     setChecking(false);
     setLeft(RETRY_SECONDS);
