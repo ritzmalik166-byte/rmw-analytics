@@ -9,7 +9,8 @@ import { useStats } from '@/lib/hooks';
 import { num, pct, duration, countryName, flag, timeAgo, toQuery, titleCase } from '@/lib/utils';
 import { useFilters } from '@/providers/FiltersProvider';
 import { useAuth } from '@/providers/AuthProvider';
-import { PageHeader, EmptyState } from '@/components/ui/feedback';
+import { PageHeader, EmptyState, Skeleton } from '@/components/ui/feedback';
+import { DashboardSkeleton } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -51,12 +52,12 @@ function DevicesPanel() {
 
 function LiveMini() {
   const { query } = useFilters();
-  const { data } = useStats('/realtime', { range: undefined }, { refetchInterval: 15_000 });
+  const { data, isLoading } = useStats('/realtime', { range: undefined }, { refetchInterval: 15_000 });
   return (
     <Panel title="Live now" href="/realtime" hrefLabel="Open real-time">
       <div className="flex items-center gap-3 border-b px-3 py-3">
         <span className={`h-2.5 w-2.5 rounded-full ${data?.active ? 'animate-pulse bg-emerald-500' : 'bg-slate-300'}`} />
-        <span className="text-2xl font-semibold tabular-nums">{data?.active ?? '—'}</span>
+        {isLoading && !data ? <Skeleton className="h-7 w-10" /> : <span className="text-2xl font-semibold tabular-nums">{data?.active ?? '—'}</span>}
         <span className="text-[13px] text-muted-foreground">active visitors{query.site === 'all' ? ' across all websites' : ''}</span>
       </div>
       <ul className="divide-y text-[13px]">
@@ -66,7 +67,8 @@ function LiveMini() {
             <span className="min-w-0 flex-1 truncate"><span className="font-medium">{f.label}</span>{f.detail ? <span className="text-muted-foreground"> · {f.detail}</span> : f.path ? <span className="text-muted-foreground"> · {f.path}</span> : null}</span>
           </li>
         ))}
-        {!data?.feed?.length && <li className="px-3 py-8 text-center text-muted-foreground">Waiting for activity…</li>}
+        {isLoading && !data && Array.from({ length: 6 }).map((_, i) => <li key={i} className="flex items-center gap-3 px-3 py-2"><Skeleton className="h-3 w-12" /><Skeleton className="h-3 flex-1" /></li>)}
+        {!isLoading && !data?.feed?.length && <li className="px-3 py-8 text-center text-muted-foreground">Waiting for activity…</li>}
       </ul>
     </Panel>
   );
@@ -76,7 +78,9 @@ function RecentLeads() {
   const { data, isLoading } = useStats('/leads', { limit: 6 });
   return (
     <Panel title="Recent leads" href="/leads">
-      {isLoading ? <div className="p-6" /> : !data?.rows?.length ? <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">No leads in this period.</p> : (
+      {isLoading ? (
+        <ul className="divide-y">{Array.from({ length: 6 }).map((_, i) => <li key={i} className="flex items-center gap-3 px-3 py-2.5"><div className="flex-1 space-y-1.5"><Skeleton className="h-3.5 w-2/5" /><Skeleton className="h-3 w-3/5" /></div><Skeleton className="h-3 w-10" /></li>)}</ul>
+      ) : !data?.rows?.length ? <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">No leads in this period.</p> : (
         <ul className="divide-y text-[13px]">
           {data.rows.map((l) => (
             <li key={l.id} className="flex items-center gap-3 px-3 py-2">
@@ -104,15 +108,16 @@ function ByWebsite() {
         <TableBody>
           {websites.map((w, i) => {
             const c = results[i]?.data?.current;
+            const cell = (v) => (results[i]?.isLoading ? <Skeleton className="ml-auto h-4 w-12" /> : v);
             return (
               <TableRow key={w.id} className="cursor-pointer" onClick={() => setSite(w.id)}>
                 <TableCell><span className="flex items-center gap-2 font-medium"><WebsiteDot website={w} />{w.name}<span className="text-[11px] font-normal text-muted-foreground">{w.domain}</span></span></TableCell>
-                <TableCell className="text-right tabular-nums">{num(c?.visitors)}</TableCell>
-                <TableCell className="text-right tabular-nums">{num(c?.sessions)}</TableCell>
-                <TableCell className="text-right tabular-nums">{num(c?.pageviews)}</TableCell>
-                <TableCell className="text-right tabular-nums">{c ? pct(c.engagementRate) : '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">{num(c?.leads)}</TableCell>
-                <TableCell className="text-right tabular-nums">{num(c?.conversions)}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(num(c?.visitors))}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(num(c?.sessions))}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(num(c?.pageviews))}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(c ? pct(c.engagementRate) : '—')}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(num(c?.leads))}</TableCell>
+                <TableCell className="text-right tabular-nums">{cell(num(c?.conversions))}</TableCell>
                 <TableCell className="text-[12px] text-muted-foreground">{w.status?.lastEventAt ? timeAgo(w.status.lastEventAt) : 'No data yet'}</TableCell>
               </TableRow>
             );
@@ -134,7 +139,8 @@ export default function OverviewPage() {
   const c = ov.data?.current;
   const p = ov.data?.previous;
 
-  if (!websitesLoading && !websites.length) {
+  if (websitesLoading) return <DashboardSkeleton />;
+  if (!websites.length) {
     return (
       <>
         <PageHeader title="Overview" />

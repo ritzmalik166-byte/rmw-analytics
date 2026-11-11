@@ -6,24 +6,26 @@
  */
 import { connectDb, closeDb } from '../config/db.js';
 import { createUser, createOrganization, addMembership } from '../services/authService.js';
+import { normalizeMobile } from '../services/otpService.js';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, arr) => (a.startsWith('--') ? [...acc, [a.slice(2), arr[i + 1]]] : acc), []));
 const email = args.email;
 const fullName = args.name || 'Owner';
 const orgName = args.org || 'My Organisation';
 const password = args.password || process.env.OWNER_PASSWORD;
+const mobile = args.mobile ? normalizeMobile(args.mobile) : null;
 
 if (!email || !password || password.length < 10) {
-  console.error('Usage: --email <email> --password <min 10 chars> [--name "Full Name"] [--org "Organisation"]');
+  console.error('Usage: --email <email> --password <min 10 chars> [--mobile 98XXXXXXXX] [--name "Full Name"] [--org "Organisation"]');
   process.exit(1);
 }
 
 try {
   await connectDb();
-  const user = await createUser({ email, password, fullName });
+  const user = await createUser({ email, password, fullName, mobile });
   const org = await createOrganization(orgName);
   await addMembership(org._id, user._id, 'owner');
-  console.log(`Created owner ${user.email} for organisation "${org.name}"`);
+  console.log(`Created Super Admin ${user.email} for organisation "${org.name}"${mobile ? ' (sign-in needs an SMS code)' : ''}`);
 } catch (err) {
   console.error('Failed:', err.message);
   process.exitCode = 1;

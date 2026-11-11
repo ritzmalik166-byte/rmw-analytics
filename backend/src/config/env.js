@@ -27,6 +27,17 @@ const schema = z.object({
   REDIS_URL: z.string().optional(),
 
   SESSION_SECRET: secret('SESSION_SECRET'),
+
+  SMS_API_URL: z.string().optional(),
+  SMS_API_KEY: z.string().optional(),
+  SMS_SENDER_ID: z.string().optional(),
+  SMS_OTP_TEMPLATE: z.string().optional(),
+  SMS_TEMPLATE_ID: z.string().optional(),
+  OTP_LENGTH: int(6),
+  OTP_TTL_SECONDS: int(300),
+  OTP_MAX_ATTEMPTS: int(5),
+  OTP_RESEND_COOLDOWN_SECONDS: int(60),
+  OTP_MAX_SENDS_PER_HOUR: int(5),
   PII_ENCRYPTION_KEY: secret('PII_ENCRYPTION_KEY'),
   IDENTITY_HASH_SECRET: secret('IDENTITY_HASH_SECRET'),
   SESSION_COOKIE_NAME: z.string().default('rmwa_sid'),

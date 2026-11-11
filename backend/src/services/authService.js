@@ -27,10 +27,17 @@ export async function createOrganization(name, { timezone = DEFAULT_TZ } = {}) {
   return { _id: insertedId, ...doc };
 }
 
-export async function createUser({ email, password, fullName }) {
+export async function assertMobileFree(mobile, exceptUserId) {
+  if (!mobile) return;
+  const clash = await col('users').findOne({ mobile, ...(exceptUserId ? { _id: { $ne: exceptUserId } } : {}) });
+  if (clash) throw conflict('This mobile number is already used by another account', 'MOBILE_TAKEN');
+}
+
+export async function createUser({ email, password, fullName, mobile = null }) {
   const normalized = String(email).trim().toLowerCase();
   if (await col('users').findOne({ email: normalized })) throw conflict('An account with this email already exists', 'EMAIL_TAKEN');
-  const doc = { email: normalized, passwordHash: await hashPassword(password), fullName, isActive: true, createdAt: new Date(), lastLoginAt: null };
+  await assertMobileFree(mobile);
+  const doc = { email: normalized, passwordHash: await hashPassword(password), fullName, isActive: true, createdAt: new Date(), lastLoginAt: null, ...(mobile ? { mobile } : {}) };
   const { insertedId } = await col('users').insertOne(doc);
   return { _id: insertedId, ...doc };
 }
@@ -42,10 +49,10 @@ export const addMembership = (orgId, userId, role) => col('memberships').updateO
 );
 
 /** Sign-up: allowed when ALLOW_SIGNUP or when the platform has no users yet (first-run bootstrap). */
-export async function register({ email, password, fullName, organization }) {
+export async function register({ email, password, fullName, organization, mobile }) {
   const anyUser = await col('users').estimatedDocumentCount();
   if (!env.ALLOW_SIGNUP && anyUser > 0) throw forbidden('Self-service sign-up is disabled. Ask an administrator for an invite.', 'SIGNUP_DISABLED');
-  const user = await createUser({ email, password, fullName });
+  const user = await createUser({ email, password, fullName, mobile });
   const org = await createOrganization(organization || `${fullName}'s organisation`);
   await addMembership(org._id, user._id, 'owner');
   return { user, org };

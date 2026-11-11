@@ -3,6 +3,8 @@
  * data access is additionally scoped to the caller's organisation websites.
  */
 export const ROLES = ['owner', 'admin', 'analyst', 'viewer'];
+/** Display names: the organisation owner is the Super Admin. */
+export const ROLE_LABELS = { owner: 'Super Admin', admin: 'Admin', analyst: 'Analyst', viewer: 'Viewer' };
 
 export const PERMISSIONS = {
   'analytics:read': ['owner', 'admin', 'analyst', 'viewer'],

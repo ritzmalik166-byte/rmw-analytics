@@ -3,8 +3,8 @@ import { env, isProd, isTest } from './env.js';
 
 // Secrets and PII are redacted wherever they appear in log objects.
 export const redactPaths = [
-  'password', 'newPassword', 'currentPassword', 'token', 'secret', 'apiKey', 'fields', 'pii',
-  '*.password', '*.newPassword', '*.currentPassword', '*.token', '*.secret', '*.apiKey', '*.fields', '*.pii',
+  'password', 'newPassword', 'currentPassword', 'token', 'secret', 'apiKey', 'fields', 'pii', 'otp', 'challenge',
+  '*.password', '*.newPassword', '*.currentPassword', '*.token', '*.secret', '*.apiKey', '*.fields', '*.pii', '*.otp', '*.challenge',
   'req.headers.authorization', 'req.headers.cookie', 'req.headers["x-signature"]', 'res.headers["set-cookie"]',
 ];
 

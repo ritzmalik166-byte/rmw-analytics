@@ -99,3 +99,7 @@ export async function copyText(text) {
     return okCopy;
   }
 }
+
+/** Display names for organisation roles (the owner is the Super Admin). */
+export const ROLE_LABELS = { owner: 'Super Admin', admin: 'Admin', analyst: 'Analyst', viewer: 'Viewer' };
+export const roleLabel = (r) => ROLE_LABELS[r] || titleCase(r);

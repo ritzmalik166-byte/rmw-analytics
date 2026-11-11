@@ -3,8 +3,10 @@ import { col, oid } from '../config/db.js';
 import { canManageRole } from '../config/rbac.js';
 import { requirePermission } from '../middleware/auth.js';
 import { asyncHandler, ok, validate, parsePagination, pageMeta } from '../utils/http.js';
-import { inviteSchema, memberRoleSchema, orgSettingsSchema } from '../validators/schemas.js';
-import { createInvite } from '../services/authService.js';
+import { inviteSchema, memberRoleSchema, orgSettingsSchema, memberCreateSchema, memberUpdateSchema } from '../validators/schemas.js';
+import { createInvite, createUser, addMembership, assertMobileFree, hashPassword } from '../services/authService.js';
+import { maskMobile } from '../services/otpService.js';
+import { ROLE_LABELS } from '../config/rbac.js';
 import { audit } from '../services/auditService.js';
 import { sendMail } from '../services/mailer.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
@@ -33,10 +35,20 @@ router.get('/members', asyncHandler(async (req, res) => {
   ok(res, {
     members: ms.map((m) => {
       const u = users.find((x) => x._id.equals(m.userId));
-      return u && { userId: String(u._id), email: u.email, fullName: u.fullName, role: m.role, isActive: u.isActive, lastLoginAt: u.lastLoginAt, joinedAt: m.createdAt };
+      return u && { userId: String(u._id), email: u.email, fullName: u.fullName, mobile: u.mobile || null, maskedMobile: maskMobile(u.mobile), role: m.role, roleLabel: ROLE_LABELS[m.role] || m.role, isActive: u.isActive, lastLoginAt: u.lastLoginAt, joinedAt: m.createdAt };
     }).filter(Boolean),
     invites: invites.map((i) => ({ id: String(i._id), email: i.email, role: i.role, expiresAt: i.expiresAt })),
   });
+}));
+
+/** Create an account directly (no invite link). Super Admin can create any role; Admin only Analyst / Viewer. */
+router.post('/members', requirePermission('members:manage'), asyncHandler(async (req, res) => {
+  const body = validate(memberCreateSchema, req.body);
+  if (!canManageRole(req.role, body.role)) throw forbidden(`You cannot create ${ROLE_LABELS[body.role] || body.role} accounts`);
+  const user = await createUser({ email: body.email, password: body.password, fullName: body.fullName, mobile: body.mobile });
+  await addMembership(req.org._id, user._id, body.role);
+  await audit(req, 'member.created', { target: user.email, meta: { role: body.role } });
+  ok(res, { userId: String(user._id) }, `${ROLE_LABELS[body.role]} account created`, 201);
 }));
 
 router.post('/invites', requirePermission('members:manage'), asyncHandler(async (req, res) => {
@@ -62,6 +74,22 @@ async function targetMembership(req) {
   if (!canManageRole(req.role, m.role)) throw forbidden('You cannot manage this member');
   return m;
 }
+
+/** Edit a member's name, mobile, active state, or set a new password (no old password needed). */
+router.patch('/members/:userId/profile', requirePermission('members:manage'), asyncHandler(async (req, res) => {
+  const body = validate(memberUpdateSchema, req.body);
+  const m = await targetMembership(req);
+  const $set = {};
+  if (body.fullName) $set.fullName = body.fullName;
+  if (body.mobile) { await assertMobileFree(body.mobile, m.userId); $set.mobile = body.mobile; }
+  if (body.isActive !== undefined) $set.isActive = body.isActive;
+  if (body.newPassword) { $set.passwordHash = await hashPassword(body.newPassword); $set.passwordChangedAt = new Date(); }
+  if (!Object.keys($set).length) throw badRequest('Nothing to update');
+  await col('users').updateOne({ _id: m.userId }, { $set });
+  if (body.newPassword || body.isActive === false) await col('authSessions').updateMany({ userId: m.userId, revokedAt: null }, { $set: { revokedAt: new Date() } });
+  await audit(req, 'member.updated', { target: String(m.userId), meta: { fields: Object.keys(body).filter((k) => k !== 'newPassword'), passwordReset: Boolean(body.newPassword) } });
+  ok(res, null, 'Member updated');
+}));
 
 router.patch('/members/:userId', requirePermission('members:manage'), asyncHandler(async (req, res) => {
   const { role } = validate(memberRoleSchema, req.body);

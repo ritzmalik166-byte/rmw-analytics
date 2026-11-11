@@ -26,5 +26,7 @@ export const limiters = {
   api: make(60_000, 600),
   login: make(15 * 60_000, 20),
   register: make(60 * 60_000, 10),
+  otpVerify: make(15 * 60_000, 30),
+  otpSend: make(15 * 60_000, 10),
   export: make(60_000, 20),
 };

@@ -218,7 +218,7 @@ function Shell({ children }) {
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold ring-1 ring-white/30">{(me?.user?.fullName || '?').split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase()}</span>
                   <span className="hidden text-left leading-tight md:block">
                     <span className="block text-[12px] font-medium">{me?.user?.fullName}</span>
-                    <span className="block text-[10px] capitalize text-white/70">{me?.role}</span>
+                    <span className="block text-[10px] text-white/70">{me?.roleLabel || me?.role}</span>
                   </span>
                 </button>
               </DropdownMenuTrigger>
@@ -226,7 +226,7 @@ function Shell({ children }) {
                 <DropdownMenuLabel className="font-normal">
                   <p className="text-sm font-medium">{me?.user?.fullName}</p>
                   <p className="truncate text-xs text-muted-foreground">{me?.user?.email}</p>
-                  <p className="mt-1 text-[11px] capitalize text-muted-foreground">{me?.role} · {me?.org?.name}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{me?.roleLabel || me?.role} · {me?.org?.name}</p>
                 </DropdownMenuLabel>
                 {me?.organizations?.length > 1 && (
                   <>
@@ -262,9 +262,52 @@ function Shell({ children }) {
         </div>
       )}
       <div className="lg:pl-56">
-        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">{pendingHref ? <PageSkeleton /> : children}</main>
+        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">{pendingHref ? (pendingHref.startsWith('/overview') ? <DashboardSkeleton /> : <PageSkeleton />) : children}</main>
       </div>
       <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
+    </div>
+  );
+}
+
+/** Placeholder for the whole app frame (header, sidebar, dashboard) while the session loads. */
+function ShellSkeleton() {
+  return (
+    <div className="min-h-screen bg-background" aria-busy="true" aria-label="Loading">
+      <div className="flex h-12 items-center gap-3 bg-[hsl(var(--primary))] px-4">
+        <Skeleton className="h-7 w-7 rounded bg-white/20" />
+        <Skeleton className="h-4 w-32 bg-white/20" />
+        <Skeleton className="ml-4 hidden h-7 w-40 bg-white/20 md:block" />
+        <div className="ml-auto flex items-center gap-3"><Skeleton className="h-6 w-6 rounded-full bg-white/20" /><Skeleton className="hidden h-4 w-24 bg-white/20 sm:block" /></div>
+      </div>
+      <div className="flex">
+        <aside className="hidden w-56 shrink-0 space-y-2 border-r bg-white p-3 lg:block">
+          {Array.from({ length: 14 }).map((_, i) => <Skeleton key={i} className={i % 5 === 0 ? 'mt-3 h-3 w-20' : 'h-5'} />)}
+        </aside>
+        <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6"><DashboardSkeleton /></main>
+      </div>
+    </div>
+  );
+}
+
+/** Dashboard-shaped placeholder: header, KPI tiles, trend chart, panels. */
+export function DashboardSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-2"><Skeleton className="h-6 w-40" /><Skeleton className="h-4 w-72 max-w-full" /></div>
+        <div className="flex gap-2"><Skeleton className="h-8 w-36" /><Skeleton className="h-8 w-24" /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="rounded border border-l-[3px] bg-card px-3 py-2.5"><Skeleton className="h-3 w-20" /><Skeleton className="mt-2 h-6 w-16" /><Skeleton className="mt-1.5 h-3 w-24" /></div>
+        ))}
+      </div>
+      <div className="rounded border bg-card p-3"><div className="mb-3 flex gap-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-6 w-20" />)}</div><Skeleton className="h-[240px] w-full" /></div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="rounded border bg-card"><div className="border-b px-3 py-2.5"><Skeleton className="h-3 w-28" /></div><div className="space-y-2 p-3">{Array.from({ length: 6 }).map((__, j) => <Skeleton key={j} className="h-6" />)}</div></div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -277,11 +320,12 @@ export function AppShell({ children }) {
   useEffect(() => {
     if (!loading && !me && !loggingOut) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [loading, me, loggingOut, router, pathname]);
-  if (loggingOut || loading || !me) {
-    return <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" />{loggingOut ? 'Logging out…' : 'Loading…'}</div>;
+  if (loggingOut) {
+    return <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" />Logging out…</div>;
   }
+  if (loading || !me) return <ShellSkeleton />;
   return (
-    <Suspense fallback={<div className="p-6"><PageSkeleton /></div>}>
+    <Suspense fallback={<ShellSkeleton />}>
       <FiltersProvider><Shell>{children}</Shell></FiltersProvider>
     </Suspense>
   );

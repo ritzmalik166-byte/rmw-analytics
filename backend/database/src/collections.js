@@ -13,6 +13,7 @@ export const C = Object.freeze({
   memberships: 'memberships',
   authSessions: 'auth_sessions',
   invites: 'invites',
+  otpChallenges: 'otp_challenges',
   websites: 'websites',
   trackingKeys: 'tracking_keys',
   visitors: 'visitors',
@@ -45,7 +46,8 @@ const ttl = { key: { expireAt: 1 }, expireAfterSeconds: 0, name: 'ttl_expireAt' 
 /** @type {Record<string, Array<{key: object, unique?: boolean, name?: string, expireAfterSeconds?: number, partialFilterExpression?: object, sparse?: boolean}>>} */
 export const INDEXES = {
   [C.organizations]: [{ key: { slug: 1 }, unique: true }],
-  [C.users]: [{ key: { email: 1 }, unique: true }],
+  [C.users]: [{ key: { email: 1 }, unique: true }, { key: { mobile: 1 }, unique: true, partialFilterExpression: { mobile: { $type: 'string' } }, name: 'uniq_mobile' }],
+  [C.otpChallenges]: [{ key: { userId: 1, createdAt: -1 } }, { key: { mobile: 1, createdAt: -1 } }, { key: { expiresAt: 1 }, expireAfterSeconds: 3600, name: 'ttl_expiresAt' }],
   [C.memberships]: [{ key: { orgId: 1, userId: 1 }, unique: true }, { key: { userId: 1 } }],
   [C.authSessions]: [{ key: { tokenHash: 1 }, unique: true }, { key: { userId: 1 } }, { key: { expiresAt: 1 }, expireAfterSeconds: 0, name: 'ttl_expiresAt' }],
   [C.invites]: [{ key: { tokenHash: 1 }, unique: true }, { key: { orgId: 1 } }, { key: { expiresAt: 1 }, expireAfterSeconds: 0, name: 'ttl_expiresAt' }],
