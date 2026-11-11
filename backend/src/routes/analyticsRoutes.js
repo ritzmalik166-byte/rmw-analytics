@@ -17,10 +17,29 @@ import * as reports from '../services/reportService.js';
 import { subscribe, activeVisitors } from '../services/realtime.js';
 import { invalidateGoals } from '../services/ingest/ingestService.js';
 import { audit } from '../services/auditService.js';
+import * as replays from '../services/replayService.js';
 
 const router = express.Router();
 const read = requirePermission('analytics:read');
 const DIMS = ['channel', 'source', 'referrer', 'utm_source', 'utm_medium', 'utm_campaign', 'country', 'region', 'city', 'device', 'browser', 'os', 'screen', 'language', 'entry', 'event'];
+
+// ─── Session recordings ────────────────────────────────────────────────────
+router.get('/replays', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
+  const p = parsePagination(req.query);
+  const r = await replays.listReplays(req.scope, { ...p, live: req.query.live === 'true', minSeconds: Number(req.query.min_seconds) || 0, visitorId: req.query.visitor || undefined });
+  ok(res, { rows: r.rows, meta: pageMeta(r.page, r.limit, r.total) });
+}));
+router.get('/replays/:websiteId/:sessionId', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
+  const after = req.query.after == null ? -1 : Number(req.query.after);
+  const data = await replays.getReplay(req.scope, req.params.websiteId, req.params.sessionId, { after: Number.isInteger(after) ? after : -1 });
+  if (after < 0) await audit(req, 'replay.viewed', { target: req.params.sessionId });
+  ok(res, data);
+}));
+router.delete('/replays/:websiteId/:sessionId', requirePermission('visitors:delete'), resolveScope, asyncHandler(async (req, res) => {
+  await replays.deleteReplay(req.scope, req.params.websiteId, req.params.sessionId);
+  await audit(req, 'replay.deleted', { target: req.params.sessionId });
+  ok(res, null, 'Recording deleted');
+}));
 
 // ─── Stats ─────────────────────────────────────────────────────────────────
 router.get('/stats/overview', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.overview(req.scope))));

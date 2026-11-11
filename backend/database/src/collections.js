@@ -14,6 +14,7 @@ export const C = Object.freeze({
   authSessions: 'auth_sessions',
   invites: 'invites',
   otpChallenges: 'otp_challenges',
+  replays: 'replays',
   websites: 'websites',
   trackingKeys: 'tracking_keys',
   visitors: 'visitors',
@@ -47,6 +48,7 @@ const ttl = { key: { expireAt: 1 }, expireAfterSeconds: 0, name: 'ttl_expireAt' 
 export const INDEXES = {
   [C.organizations]: [{ key: { slug: 1 }, unique: true }],
   [C.users]: [{ key: { email: 1 }, unique: true }, { key: { mobile: 1 }, unique: true, partialFilterExpression: { mobile: { $type: 'string' } }, name: 'uniq_mobile' }],
+  [C.replays]: [{ key: { websiteId: 1, sessionId: 1 }, unique: true }, { key: { websiteId: 1, lastAt: -1 } }, { key: { visitorId: 1 } }],
   [C.otpChallenges]: [{ key: { userId: 1, createdAt: -1 } }, { key: { mobile: 1, createdAt: -1 } }, { key: { expiresAt: 1 }, expireAfterSeconds: 3600, name: 'ttl_expiresAt' }],
   [C.memberships]: [{ key: { orgId: 1, userId: 1 }, unique: true }, { key: { userId: 1 } }],
   [C.authSessions]: [{ key: { tokenHash: 1 }, unique: true }, { key: { userId: 1 } }, { key: { expiresAt: 1 }, expireAfterSeconds: 0, name: 'ttl_expiresAt' }],

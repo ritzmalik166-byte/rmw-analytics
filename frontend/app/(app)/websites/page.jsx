@@ -109,6 +109,8 @@ function InstallTab({ site }) {
 }
 
 const TOGGLES = [
+  ['replay', 'Session recordings', 'Record visits so you can watch them back like a video, or live (like Microsoft Clarity). Form typing is always masked.'],
+  ['replayMaskText', 'Hide all text in recordings', 'Replace every piece of page text with ***** in recordings (strongest privacy).'],
   ['leadCapture', 'Lead capture', 'Accept allowlisted form fields (below) as encrypted leads.'],
   ['heatmaps', 'Heatmaps', 'Record click positions, rage and dead clicks. Increases data volume.'],
   ['identify', 'Identify users', 'Accept analytics.identify() to link logged-in customers across your sites.'],
@@ -127,7 +129,7 @@ function SettingsTab({ site, onSaved }) {
     mutationFn: () => api(`/websites/${site.id}`, { method: 'PATCH', body: {
       name: meta.name, code: meta.code, domain: meta.domain,
       allowedOrigins: meta.allowedOrigins.split(/\s+/).filter(Boolean),
-      settings: { ...s, sampleRate: Number(s.sampleRate), retentionDays: Number(s.retentionDays) },
+      settings: { ...s, sampleRate: Number(s.sampleRate), retentionDays: Number(s.retentionDays), replaySampleRate: Number(s.replaySampleRate ?? 1), replayRetentionDays: Number(s.replayRetentionDays ?? 30) },
     } }),
     onSuccess: () => { toast.success('Settings saved'); onSaved(); },
     onError: (e) => toast.error(apiMessage(e)),
@@ -156,6 +158,13 @@ function SettingsTab({ site, onSaved }) {
         <Field label="Sampling rate" hint="Share of visitors tracked (0.01–1)."><Input type="number" step="0.01" min="0.01" max="1" value={s.sampleRate} onChange={(e) => setS({ ...s, sampleRate: e.target.value })} /></Field>
         <Field label="Data retention (days)" hint="Raw data older than this is deleted."><Input type="number" min="30" max="1825" value={s.retentionDays} onChange={(e) => setS({ ...s, retentionDays: e.target.value })} /></Field>
       </div>
+      {s.replay && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Share of visits recorded" hint="0.01–1. Use less than 1 on busy sites to save disk space."><Input type="number" step="0.01" min="0.01" max="1" value={s.replaySampleRate ?? 1} onChange={(e) => setS({ ...s, replaySampleRate: e.target.value })} /></Field>
+          <Field label="Keep recordings for (days)" hint="Older recordings are deleted automatically."><Input type="number" min="1" max="365" value={s.replayRetentionDays ?? 30} onChange={(e) => setS({ ...s, replayRetentionDays: e.target.value })} /></Field>
+          <p className="self-end pb-1 text-[11px] text-muted-foreground">Add class <code>rmwa-block</code> to any element that must never be recorded.</p>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Allowlisted lead fields" hint="Comma separated. Only these field names are ever captured."><Input value={list('leadFields')} onChange={setList('leadFields')} /></Field>
         <Field label="Excluded paths" hint="Comma separated prefixes or globs, e.g. /admin, /checkout/*"><Input value={list('excludePaths')} onChange={setList('excludePaths')} /></Field>

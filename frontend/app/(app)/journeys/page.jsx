@@ -124,7 +124,7 @@ function VisitorJourneys() {
           {!sel ? <EmptyState icon={Route} title="Pick a visitor" description="Choose someone from the list to see every page and action on their journey." />
             : profile.isLoading ? <div className="space-y-3"><Skeleton className="h-9" />{Array.from({ length: 6 }).map((_, i) => <div key={i} className={cn('flex', i % 2 ? 'justify-end' : 'justify-start')}><Skeleton className="h-12 w-[45%]" /></div>)}</div>
               : profile.error ? <ErrorState error={profile.error} onRetry={profile.refetch} />
-                : <JourneyRoadmap journey={profile.data.journey} sessions={profile.data.sessions} />}
+                : <JourneyRoadmap journey={profile.data.journey} sessions={profile.data.sessions} websiteId={sel.websiteId} />}
         </div>
       </Card>
     </div>

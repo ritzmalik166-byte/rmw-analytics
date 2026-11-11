@@ -9,3 +9,4 @@ dist/
 coverage/
 .mongo-data/
 data/geoip/*.mmdb
+backend/data/replays/

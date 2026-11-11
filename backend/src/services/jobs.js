@@ -5,6 +5,7 @@ import { logger } from '../config/logger.js';
 import { rollupRecent } from './rollupService.js';
 import { evaluateAlerts } from './alertService.js';
 import { runScheduledReports } from './reportService.js';
+import { purgeExpiredReplays } from './replayService.js';
 import { DAY_MS } from '../utils/dates.js';
 
 const OWNER = `${os.hostname()}:${process.pid}`;
@@ -52,6 +53,7 @@ const JOBS = [
   { name: 'alerts', everyMs: () => 60_000, ttlMs: 5 * 60_000, run: evaluateAlerts },
   { name: 'reports', everyMs: () => 15 * 60_000, ttlMs: 30 * 60_000, run: () => runScheduledReports() },
   { name: 'retention', everyMs: () => 30 * 60_000, ttlMs: 60 * 60_000, run: applyRetentionChanges },
+  { name: 'replay-retention', everyMs: () => 60 * 60_000, ttlMs: 60 * 60_000, run: purgeExpiredReplays },
 ];
 
 /** Start the job loops. Returns a stop function. */

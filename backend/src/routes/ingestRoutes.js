@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import rateLimit from 'express-rate-limit';
-import { batchSchema, LIMITS, SITE_ID_RE, DEFAULT_WEBSITE_SETTINGS } from '@rmw-analytics/shared';
+import { batchSchema, LIMITS, SITE_ID_RE, VISITOR_ID_RE, SESSION_ID_RE, DEFAULT_WEBSITE_SETTINGS } from '@rmw-analytics/shared';
 import { env, isTest } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { getRedis } from '../config/redis.js';
@@ -15,10 +15,12 @@ import { hmacSha256, safeEqual } from '../utils/crypto.js';
 import { isBot } from '../utils/ua.js';
 import { getActiveWebsiteBySiteId, isOriginAllowed, verifySecretKey, secretForSignature, publicConfig } from '../services/websiteService.js';
 import { ingestBatch } from '../services/ingest/ingestService.js';
+import { saveChunk } from '../services/replayService.js';
 
 const router = express.Router();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TRACKER_PATH = path.resolve(here, '../../tracker/dist/tracker.js');
+const REPLAY_PATH = path.resolve(here, '../../tracker/dist/replay.js');
 const MAX_INFLATED_BYTES = 512 * 1024;
 
 /** Tracker + ingestion are called cross-origin from customer websites without credentials. */
@@ -36,24 +38,23 @@ function publicCors(req, res, next) {
 }
 
 // ─── tracker.js ────────────────────────────────────────────────────────────
-let trackerCache = null;
-async function loadTracker() {
-  if (trackerCache && !isTest && env.NODE_ENV === 'production') return trackerCache;
+const scriptCache = new Map();
+async function loadScript(file) {
+  const cached = scriptCache.get(file);
+  if (cached && !isTest && env.NODE_ENV === 'production') return cached;
   try {
-    const body = await fs.readFile(TRACKER_PATH);
-    const stat = await fs.stat(TRACKER_PATH);
-    if (!trackerCache || trackerCache.mtime !== stat.mtimeMs) {
-      trackerCache = { body, gz: zlib.gzipSync(body, { level: 9 }), br: zlib.brotliCompressSync(body), etag: `"${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`, mtime: stat.mtimeMs };
-    }
-    return trackerCache;
+    const stat = await fs.stat(file);
+    if (cached && cached.mtime === stat.mtimeMs) return cached;
+    const body = await fs.readFile(file);
+    const entry = { body, gz: zlib.gzipSync(body, { level: 9 }), br: zlib.brotliCompressSync(body), etag: `"${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`, mtime: stat.mtimeMs };
+    scriptCache.set(file, entry);
+    return entry;
   } catch {
     return null;
   }
 }
 
-router.get(['/tracker.js', '/t.js'], publicCors, asyncHandler(async (req, res) => {
-  const t = await loadTracker();
-  if (!t) throw notFound('tracker.js has not been built. Run: npm run build:tracker');
+function sendScript(req, res, t) {
   res.set('Content-Type', 'application/javascript; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
   res.set('ETag', t.etag);
@@ -64,6 +65,18 @@ router.get(['/tracker.js', '/t.js'], publicCors, asyncHandler(async (req, res) =
   if (/\bbr\b/.test(ae)) { res.set('Content-Encoding', 'br'); return res.end(t.br); }
   if (/\bgzip\b/.test(ae)) { res.set('Content-Encoding', 'gzip'); return res.end(t.gz); }
   return res.end(t.body);
+}
+
+router.get('/replay.js', publicCors, asyncHandler(async (req, res) => {
+  const t = await loadScript(REPLAY_PATH);
+  if (!t) throw notFound('replay.js has not been built. Run: npm run build');
+  return sendScript(req, res, t);
+}));
+
+router.get(['/tracker.js', '/t.js'], publicCors, asyncHandler(async (req, res) => {
+  const t = await loadScript(TRACKER_PATH);
+  if (!t) throw notFound('tracker.js has not been built. Run: npm run build:tracker');
+  return sendScript(req, res, t);
 }));
 
 // ─── Public site config (consent mode, features) ───────────────────────────
@@ -181,6 +194,36 @@ router.post('/api/v1/events', publicCors, ipLimiter, rawBody, asyncHandler(async
   const result = await ingestBatch({ website, batch, req, ip, ua });
   if (result.dropped) logger.debug({ siteId: batch.siteId, dropped: result.dropped }, 'Events dropped (time window / excluded path)');
   return res.status(202).json({ success: true, data: result });
+}));
+
+// ─── Session recording chunks ──────────────────────────────────────────────
+const REPLAY_MAX_BODY = 8 * 1024 * 1024;
+const REPLAY_MAX_INFLATED = 24 * 1024 * 1024;
+const replayRaw = express.raw({ type: () => true, limit: REPLAY_MAX_BODY });
+
+router.options('/api/v1/replay', publicCors);
+router.post('/api/v1/replay', publicCors, ipLimiter, replayRaw, asyncHandler(async (req, res) => {
+  let buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) throw badRequest('Empty body', 'EMPTY_BODY');
+  if (req.query.z === '1') {
+    try { buf = zlib.gunzipSync(buf, { maxOutputLength: REPLAY_MAX_INFLATED }); } catch { throw payloadTooLarge('Invalid or oversized recording chunk'); }
+  }
+  let j;
+  try { j = JSON.parse(buf.toString('utf8')); } catch { throw badRequest('Malformed JSON body', 'BAD_JSON'); }
+  const valid = j && SITE_ID_RE.test(j.siteId) && VISITOR_ID_RE.test(j.vid) && SESSION_ID_RE.test(j.sid)
+    && Number.isInteger(j.seq) && j.seq >= 0 && j.seq < 1_000_000 && Array.isArray(j.events) && j.events.length > 0 && j.events.length <= 5000
+    && j.events.every((e) => e && Number.isInteger(e.type) && Number.isFinite(e.timestamp));
+  if (!valid) throw badRequest('Invalid recording chunk', 'VALIDATION_ERROR');
+  const website = await getActiveWebsiteBySiteId(j.siteId);
+  if (!website) throw notFound('Unknown site', 'UNKNOWN_SITE');
+  const settings = { ...DEFAULT_WEBSITE_SETTINGS, ...website.settings };
+  const origin = requestOrigin(req);
+  if (origin ? !isOriginAllowed(website, origin) : !env.INGEST_ALLOW_MISSING_ORIGIN) throw forbidden('Origin not allowed for this site', 'ORIGIN_REJECTED');
+  if (!settings.replay || isBot(req.get('user-agent') || '')) return res.status(202).json({ success: true, data: { accepted: 0 } });
+  if (settings.respectDnt && (req.get('dnt') === '1' || req.get('sec-gpc') === '1')) return res.status(202).json({ success: true, data: { accepted: 0 } });
+  await checkSiteQuota(j.siteId, 1);
+  await saveChunk({ website, sessionId: j.sid, visitorId: j.vid, seq: j.seq, events: j.events });
+  return res.status(202).json({ success: true, data: { accepted: j.events.length } });
 }));
 
 export default router;

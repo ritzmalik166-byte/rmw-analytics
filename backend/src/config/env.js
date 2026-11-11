@@ -36,6 +36,9 @@ const schema = z.object({
   // false = sign in with email + password only (SMS step skipped even when a mobile is set)
   LOGIN_OTP_ENABLED: bool(true),
   OTP_LENGTH: int(6),
+
+  // Session recordings are stored on disk here (default: backend/data/replays)
+  REPLAY_DIR: z.string().optional(),
   OTP_TTL_SECONDS: int(300),
   OTP_MAX_ATTEMPTS: int(5),
   OTP_RESEND_COOLDOWN_SECONDS: int(60),

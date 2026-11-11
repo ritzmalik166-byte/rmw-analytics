@@ -5,6 +5,7 @@ import { notFound } from '../utils/errors.js';
 import { decryptJson, decrypt } from '../utils/crypto.js';
 import { escapeRegex } from '../utils/http.js';
 import { presentLead } from './leadService.js';
+import { replayIndex } from './replayService.js';
 
 const shortId = (visitorId) => visitorId.replace(/^v_/, '').slice(0, 6).toUpperCase();
 
@@ -54,6 +55,7 @@ export async function visitorProfile(scope, websiteId, visitorId, { pii }) {
     col('leads').find(where).sort({ ts: -1 }).limit(20).toArray(),
     v.identityId ? col('identities').findOne({ _id: v.identityId }) : null,
   ]);
+  const recorded = await replayIndex(v.websiteId, sessions.map((s) => s.sessionId));
   let identityOut = null;
   if (identity) {
     // Cross-site view only within this organisation, and only via an explicit identify() link.
@@ -69,7 +71,7 @@ export async function visitorProfile(scope, websiteId, visitorId, { pii }) {
     sessions: sessions.map((s) => ({
       sessionId: s.sessionId, startedAt: s.startedAt, lastSeenAt: s.lastSeenAt, durationMs: s.durationMs, activeMs: s.activeMs,
       pageviews: s.pageviews, events: s.events, entryPath: s.entryPath, exitPath: s.exitPath, channel: s.channel, source: s.source,
-      utm: s.utm, device: s.device, geo: s.geo, converted: s.converted, bounced: s.bounced,
+      utm: s.utm, device: s.device, geo: s.geo, converted: s.converted, bounced: s.bounced, hasReplay: recorded.has(s.sessionId),
     })),
     journey: events.map((e) => ({ ...e, label: EVENT_LABELS[e.name] || e.name })),
     searches,

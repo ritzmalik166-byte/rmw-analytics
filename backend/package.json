@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node tracker/build.mjs",
     "start": "node src/server.js",
@@ -34,10 +36,13 @@
     "nodemailer": "^6.9.15",
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",
+    "rrweb": "2.1.7",
     "ua-parser-js": "^1.0.39",
     "zod": "^3.23.8"
   },
-  "optionalDependencies": { "maxmind": "^4.3.22" },
+  "optionalDependencies": {
+    "maxmind": "^4.3.22"
+  },
   "devDependencies": {
     "mongodb-memory-server": "^10.1.2",
     "pino-pretty": "^11.2.2"

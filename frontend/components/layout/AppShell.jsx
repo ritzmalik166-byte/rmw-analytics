@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bell, LogOut, Menu, X, Loader2, LayoutDashboard, Radio, Users2, Timer, MapPin, MonitorSmartphone, Globe2, FileText, MousePointerClick,
   Search, Route, Flame, Share2, Megaphone, ClipboardList, Inbox, Filter, Server, BellRing, FileSpreadsheet, Settings, ChevronDown, Check, Building2, KeyRound,
+  Video,
 } from 'lucide-react';
 import { useAuth } from '@/providers/AuthProvider';
 import { FiltersProvider, useFilters } from '@/providers/FiltersProvider';
@@ -34,6 +35,7 @@ export const NAV = [
     { href: '/events', label: 'Events', icon: MousePointerClick },
     { href: '/searches', label: 'Searches', icon: Search },
     { href: '/journeys', label: 'User journeys', icon: Route },
+    { href: '/recordings', label: 'Recordings', icon: Video, perm: 'visitors:read' },
     { href: '/heatmaps', label: 'Heatmaps', icon: Flame },
   ] },
   { title: 'Acquisition', items: [

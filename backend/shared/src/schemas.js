@@ -67,9 +67,14 @@ export const websiteSettingsSchema = z.object({
   excludePaths: z.array(z.string().max(200)).max(50).default([]),
   searchParams: z.array(z.string().max(40)).max(20).default([]),
   leadFields: z.array(z.string().max(40)).max(30).default(['name', 'email', 'phone', 'city', 'message']),
+  // Session recordings (rrweb). Form inputs are always masked; replayMaskText also hides all page text.
+  replay: z.boolean().default(false),
+  replaySampleRate: z.number().min(0.01).max(1).default(1),
+  replayMaskText: z.boolean().default(false),
+  replayRetentionDays: z.number().int().min(1).max(365).default(30),
 });
 
 export const DEFAULT_WEBSITE_SETTINGS = Object.freeze(websiteSettingsSchema.parse({}));
 
 /** Subset of settings that the public tracker config endpoint exposes. */
-export const PUBLIC_SETTING_KEYS = ['consentMode', 'respectDnt', 'cookieless', 'heatmaps', 'sampleRate', 'autoSearch', 'autoForms', 'trackErrors', 'trackMedia', 'excludePaths', 'searchParams', 'leadCapture', 'leadFields', 'identify'];
+export const PUBLIC_SETTING_KEYS = ['consentMode', 'respectDnt', 'cookieless', 'heatmaps', 'sampleRate', 'autoSearch', 'autoForms', 'trackErrors', 'trackMedia', 'excludePaths', 'searchParams', 'leadCapture', 'leadFields', 'identify', 'replay', 'replaySampleRate', 'replayMaskText'];

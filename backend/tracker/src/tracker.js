@@ -50,6 +50,7 @@ export function createTracker(win, opts) {
     consentMode: opts.consent || 'none', respectDnt: true, cookieless: Boolean(opts.cookieless), heatmaps: false,
     sampleRate: opts.sampleRate == null ? 1 : opts.sampleRate, autoSearch: true, autoForms: true, trackErrors: true,
     trackMedia: true, excludePaths: [], searchParams: [], leadCapture: false, leadFields: [], identify: false,
+    replay: false, replaySampleRate: 1, replayMaskText: false,
   };
   const disabled = {};
   (opts.disable || []).forEach((d) => { disabled[String(d).replace(/^no-/, '')] = true; });
@@ -136,7 +137,22 @@ export function createTracker(win, opts) {
   win.addEventListener('online', () => { queue.drainOffline(); queue.flush(false); });
   t.timers.push(win.setInterval(() => queue.flush(false), FLUSH_MS));
 
-  const disable = () => { enabled = false; queue.clear(); };
+  // ─── session recording: replay.js is fetched only when the site enables it ───
+  let replayOn = false;
+  const R = () => win.__rmwaReplay;
+  const stopReplay = () => { replayOn = false; if (R()) R().stop(); };
+  const startReplay = safe(() => {
+    if (replayOn || !cfg.replay || !enabled || !consentAllows() || hash(ids.vid + 'r') % 1e4 >= cfg.replaySampleRate * 1e4) return;
+    replayOn = true;
+    const go = () => replayOn && R() && R().start({ api: opts.api, siteId: opts.siteId, maskText: cfg.replayMaskText, getIds: () => ({ vid: ids.vid, sid: ids.sid }) });
+    if (R()) return go();
+    const sc = doc.createElement('script');
+    sc.src = opts.api.replace(/\/$/, '') + '/replay.js';
+    sc.onload = go;
+    doc.head.appendChild(sc);
+  });
+
+  const disable = () => { enabled = false; queue.clear(); stopReplay(); };
   const block = () => { blocked = true; disable(); };
 
   const applyConfig = (remote) => {
@@ -153,7 +169,7 @@ export function createTracker(win, opts) {
   const persistMode = () => (cfg.cookieless ? 'session' : consentAllows() && consent !== 'denied' ? 'local' : 'memory');
 
   const becomeReady = safe(() => {
-    if (ready) { ids.setMode(enabled ? persistMode() : 'memory'); return; }
+    if (ready) { ids.setMode(enabled ? persistMode() : 'memory'); startReplay(); return; }
     ready = true;
     if (cfg.respectDnt && privacySignal(win)) { block(); }
     if (enabled && cfg.sampleRate < 1 && hash(ids.vid) % 10000 >= cfg.sampleRate * 10000) { block(); }
@@ -163,7 +179,7 @@ export function createTracker(win, opts) {
     if (consent === 'denied') disable();
     ids.setMode(enabled ? persistMode() : 'memory');
     whenReady.splice(0).forEach((fn) => fn());
-    if (enabled) { queue.drainOffline(); queue.flush(false); }
+    if (enabled) { queue.drainOffline(); queue.flush(false); startReplay(); }
   });
 
   const configUrl = `${opts.api.replace(/\/$/, '')}/api/v1/sites/${encodeURIComponent(opts.siteId)}/config`;
@@ -204,12 +220,12 @@ export function createTracker(win, opts) {
       if (state !== 'granted' && state !== 'denied') return;
       consent = state;
       consentStore.save(state);
-      if (state === 'denied') { queue.clear(); ids.setMode('memory'); return; }
+      if (state === 'denied') { queue.clear(); ids.setMode('memory'); stopReplay(); return; }
       enabled = !blocked && !consentStore.optedOut();
-      if (ready) { ids.setMode(persistMode()); queue.flush(false); }
+      if (ready) { ids.setMode(persistMode()); queue.flush(false); startReplay(); }
     }),
-    optOut: safe(() => { consentStore.setOptOut(true); disable(); ids.setMode('memory'); }),
-    optIn: safe(() => { consentStore.setOptOut(false); enabled = !blocked; if (ready) ids.setMode(persistMode()); }),
+    optOut: safe(() => { consentStore.setOptOut(true); disable(); ids.setMode('memory'); }), // disable() also stops recording
+    optIn: safe(() => { consentStore.setOptOut(false); enabled = !blocked; if (ready) { ids.setMode(persistMode()); startReplay(); } }),
     reset: safe(() => { queue.flush(false); ids.reset(); }),
     getVisitorId: () => ids.vid,
     getSessionId: () => ids.sid,

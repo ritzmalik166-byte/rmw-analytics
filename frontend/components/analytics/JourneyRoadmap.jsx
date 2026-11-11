@@ -1,5 +1,6 @@
 'use client';
-import { Flag, MapPin, MousePointerClick, Clock, Smartphone, Monitor, Tablet } from 'lucide-react';
+import Link from 'next/link';
+import { Flag, MapPin, MousePointerClick, Clock, Smartphone, Monitor, Tablet, PlayCircle } from 'lucide-react';
 import { CHANNELS } from '@rmw-analytics/shared/channels';
 import { cn, formatHm, formatDate, duration, flag, countryName } from '@/lib/utils';
 import { ICON, describe, meaningfulSteps } from './Journey';
@@ -97,7 +98,7 @@ function Stop({ e, side, index }) {
 }
 
 /** A visitor's complete journey drawn as a road: one stretch per visit, start pin → stops → finish flag. */
-export function JourneyRoadmap({ journey = [], sessions = [] }) {
+export function JourneyRoadmap({ journey = [], sessions = [], websiteId }) {
   const visits = groupVisits(journey, sessions);
   if (!visits.length) return <p className="px-3 py-12 text-center text-[13px] text-muted-foreground">No activity recorded for this visitor.</p>;
   return (
@@ -117,6 +118,7 @@ export function JourneyRoadmap({ journey = [], sessions = [] }) {
                 <span>{pages} page{pages === 1 ? '' : 's'}</span>
                 {s?.durationMs != null && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{duration(s.durationMs)}</span>}
                 {s?.converted && <span className="rounded bg-[#d93025] px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Converted</span>}
+                {s?.hasReplay && websiteId && <Link href={`/recordings/${websiteId}/${v.sessionId}`} className="inline-flex items-center gap-1 rounded bg-[#1a73e8] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1765cc]"><PlayCircle className="h-3.5 w-3.5" />Watch recording</Link>}
               </span>
             </div>
             <Road>
