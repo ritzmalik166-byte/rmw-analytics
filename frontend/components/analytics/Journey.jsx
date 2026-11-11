@@ -1,36 +1,70 @@
 import { FileText, Search, MousePointerClick, ClipboardList, CheckCircle2, Play, ExternalLink, Download, AlertTriangle, Sparkles, UserCheck, Flame } from 'lucide-react';
 import { cn, formatHm, formatDate } from '@/lib/utils';
 
-const ICON = {
+export const ICON = {
   page_view: FileText, search: Search, click: MousePointerClick, outbound_click: ExternalLink, file_download: Download,
   form_view: ClipboardList, form_start: ClipboardList, form_submit: CheckCircle2, form_error: AlertTriangle, lead: CheckCircle2, conversion: Sparkles,
   video_play: Play, video_complete: Play, js_error: AlertTriangle, rage_click: Flame, identify: UserCheck,
 };
 const TONE = { form_submit: 'text-emerald-600 bg-emerald-50', lead: 'text-emerald-600 bg-emerald-50', conversion: 'text-emerald-600 bg-emerald-50', search: 'text-blue-600 bg-blue-50', js_error: 'text-red-600 bg-red-50', form_error: 'text-amber-600 bg-amber-50', rage_click: 'text-amber-600 bg-amber-50' };
 
-function describe(e) {
+/** Human name for a form: auto ids like "form_0" become "the form on this page". */
+const formName = (p) => {
+  const n = String(p.formName || p.form || '').trim();
+  return !n || /^form[_-]?\d+$/i.test(n) ? 'the form on this page' : `the “${n.replace(/[_-]+/g, ' ')}” form`;
+};
+const clean = (t, max = 60) => {
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+};
+
+export function describe(e) {
   const p = e.props || {};
+  const path = e.page?.path;
   switch (e.name) {
-    case 'page_view': return { title: e.page?.title || e.page?.path, sub: e.page?.path };
-    case 'search': return { title: `Search: “${p.query}”`, sub: [p.category, p.results != null ? `${p.results} results` : null].filter(Boolean).join(' · ') || e.page?.path };
-    case 'click': return { title: `Clicked ${p.text ? `“${p.text}”` : p.tag || 'element'}`, sub: e.page?.path };
-    case 'outbound_click': return { title: `Outbound link to ${p.domain || p.href}`, sub: e.page?.path };
-    case 'file_download': return { title: `Downloaded ${String(p.href || '').split('/').pop()}`, sub: e.page?.path };
-    case 'form_submit': return { title: `Submitted ${p.formName || p.form || 'form'}`, sub: e.page?.path };
-    case 'form_start': return { title: `Started ${p.formName || p.form || 'form'}`, sub: e.page?.path };
-    case 'form_view': return { title: `Saw ${p.formName || p.form || 'form'}`, sub: e.page?.path };
-    case 'form_error': return { title: `Form error${p.field ? ` on “${p.field}”` : ''}`, sub: e.page?.path };
-    case 'lead': return { title: 'Lead submitted', sub: e.page?.path };
-    case 'conversion': return { title: `Conversion: ${p.goal || ''}${p.value ? ` (${p.value} ${p.currency || ''})` : ''}`, sub: e.page?.path };
-    case 'session_start': return { title: p.isNew ? 'First visit' : 'New session', sub: e.page?.path };
-    case 'js_error': return { title: 'JavaScript error', sub: p.msg };
-    default: return { title: e.label || e.name, sub: [e.page?.path, Object.keys(p).length ? JSON.stringify(p).slice(0, 120) : null].filter(Boolean).join(' · ') };
+    case 'page_view': return { title: e.page?.title ? clean(e.page.title, 90) : path, sub: path };
+    case 'search': return { title: `Searched for “${clean(p.query)}”`, sub: [p.category, p.results != null ? `${p.results} results` : null].filter(Boolean).join(' · ') || path };
+    case 'click': return { title: p.text ? `Clicked “${clean(p.text)}”` : p.href ? `Clicked a link to ${clean(p.href)}` : 'Clicked on the page', sub: path };
+    case 'outbound_click': return { title: `Left for ${p.domain || clean(p.href)}`, sub: path };
+    case 'file_download': return { title: `Downloaded ${clean(String(p.href || '').split('/').pop())}`, sub: path };
+    case 'form_submit': return { title: `Submitted ${formName(p)}`, sub: path };
+    case 'form_start': return { title: `Started filling ${formName(p)}`, sub: path };
+    case 'form_view': return { title: `Saw ${formName(p)}`, sub: path };
+    case 'form_error': return { title: `Form error${p.field ? ` on “${p.field}”` : ''}`, sub: path };
+    case 'lead': return { title: 'Became a lead', sub: path };
+    case 'conversion': return { title: `Conversion${p.goal ? `: ${p.goal}` : ''}${p.value ? ` (${p.value} ${p.currency || ''})` : ''}`, sub: path };
+    case 'session_start': return { title: p.isNew ? 'First visit' : 'New session', sub: path };
+    case 'rage_click': return { title: p.text ? `Clicked “${clean(p.text)}” repeatedly (frustrated)` : 'Clicked repeatedly (frustrated)', sub: path };
+    case 'dead_click': return { title: p.text ? `Clicked “${clean(p.text)}” but nothing happened` : 'Clicked something that did nothing', sub: path };
+    case 'video_play': return { title: 'Played a video', sub: path };
+    case 'video_complete': return { title: 'Watched a video to the end', sub: path };
+    case 'js_error': return { title: 'Page error', sub: clean(p.msg, 120) };
+    default: return { title: e.label || e.name, sub: path };
   }
 }
 
+/**
+ * Steps worth showing on a journey: pages, real clicks, form progress, searches, leads.
+ * Drops tracking noise: "saw a form", clicks on blank areas, dead clicks and repeats.
+ */
+export function meaningfulSteps(events) {
+  const out = [];
+  for (const e of events) {
+    const p = e.props || {};
+    if (['session_start', 'form_view', 'dead_click', 'js_error', 'video_pause', 'identify'].includes(e.name)) continue;
+    if (e.name === 'click' && !p.text && !p.href) continue;
+    const prev = out[out.length - 1];
+    // Same step twice in a row (reload, double click, repeated form start) → keep one.
+    if (prev && prev.name === e.name && prev.page?.path === e.page?.path && JSON.stringify(prev.props?.text || prev.props?.form || '') === JSON.stringify(p.text || p.form || '')) continue;
+    out.push(e);
+  }
+  return out;
+}
+
 /** Chronological journey grouped by day: "11:32 Homepage → 11:36 Search: “3 BHK Noida” → …" */
-export function Journey({ events }) {
-  if (!events?.length) return <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">No activity recorded.</p>;
+export function Journey({ events: raw }) {
+  const events = meaningfulSteps(raw || []);
+  if (!events.length) return <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">No activity recorded.</p>;
   let lastDay = null;
   let lastSession = null;
   return (

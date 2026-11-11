@@ -1,10 +1,17 @@
 'use client';
-import { useState } from 'react';
-import { ArrowRight, Route } from 'lucide-react';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { ArrowRight, Route, Search, Users2, ExternalLink, Smartphone, Monitor, Tablet } from 'lucide-react';
+import { CHANNELS } from '@rmw-analytics/shared/channels';
+import { api } from '@/lib/api';
 import { useStats } from '@/lib/hooks';
-import { num } from '@/lib/utils';
+import { cn, num, timeAgo, toQuery, flag } from '@/lib/utils';
 import { useFilters } from '@/providers/FiltersProvider';
-import { PageHeader, EmptyState, ErrorState, Skeleton } from '@/components/ui/feedback';
+import { useAuth } from '@/providers/AuthProvider';
+import { PageHeader, EmptyState, ErrorState, Skeleton, Pagination } from '@/components/ui/feedback';
+import { JourneyRoadmap, RoadmapLegend } from '@/components/analytics/JourneyRoadmap';
 import { Card } from '@/components/ui/card';
 import { Input, Select } from '@/components/ui/input';
 import { Panel } from '@/components/analytics/Panel';
@@ -38,7 +45,93 @@ function FlowColumns({ flows }) {
   );
 }
 
-export default function JourneysPage() {
+const SEGMENTS = [['', 'All visitors'], ['new', 'New'], ['returning', 'Returning'], ['leads', 'Became leads']];
+const DEVICE_ICON = { mobile: Smartphone, tablet: Tablet, desktop: Monitor };
+const vkey = (v) => `${v.websiteId}:${v.visitorId}`;
+
+function VisitorCard({ v, active, onClick }) {
+  const Dev = DEVICE_ICON[v.device?.type] || Monitor;
+  const src = v.first ? (v.first.source && v.first.source !== '(direct)' ? v.first.source : v.first.channelLabel) : 'Direct';
+  return (
+    <button type="button" onClick={onClick}
+      className={cn('w-full border-l-4 px-3 py-2.5 text-left transition-colors', active ? 'border-l-[#1a73e8] bg-[#1a73e8]/[0.07]' : 'border-l-transparent hover:bg-slate-50')}>
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-[13px] text-slate-900">{v.label.replace('Visitor ', '')}</span>
+        {v.website?.code && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600">{v.website.code}</span>}
+        {v.counts.leads > 0 && <span className="rounded bg-[#d93025] px-1.5 text-[10px] font-bold uppercase text-white">Lead</span>}
+        {v.counts.sessions > 1 && <span className="rounded bg-[#f9ab00]/20 px-1.5 text-[10px] font-semibold text-[#b06000]">Returning</span>}
+        <span className="ml-auto text-[11px] text-muted-foreground">{timeAgo(v.lastSeen)}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
+        <Dev className="h-3 w-3 shrink-0" />
+        {v.geo?.country && <span>{flag(v.geo.country)} {v.geo.city || v.geo.country}</span>}
+        <span className="truncate">· from {src}</span>
+      </div>
+      <div className="mt-1.5 flex gap-1.5 text-[10px] font-semibold">
+        <span className="rounded bg-[#1a73e8]/10 px-1.5 py-0.5 text-[#1a73e8]">{num(v.counts.pageviews)} pages</span>
+        <span className="rounded bg-[#f9ab00]/15 px-1.5 py-0.5 text-[#b06000]">{num(v.counts.sessions)} visit{v.counts.sessions === 1 ? '' : 's'}</span>
+        {(v.counts.searches > 0 || v.counts.conversions > 0) && <span className="rounded bg-[#d93025]/10 px-1.5 py-0.5 text-[#d93025]">{num(v.counts.searches + v.counts.conversions)} key</span>}
+      </div>
+    </button>
+  );
+}
+
+function VisitorJourneys() {
+  const { query, current, rangeLabel } = useFilters();
+  const [segment, setSegment] = useState('');
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [sel, setSel] = useState(null);
+  const listQ = { ...query, segment: segment || undefined, q: q.trim() || undefined, page, limit: 30 };
+  const list = useQuery({ queryKey: ['journey-visitors', listQ], queryFn: () => api(`/visitors${toQuery(listQ)}`), placeholderData: keepPreviousData });
+  const rows = list.data?.rows || [];
+  useEffect(() => { if (rows.length && (!sel || !rows.some((r) => vkey(r) === vkey(sel)))) setSel(rows[0]); }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  const profile = useQuery({ queryKey: ['visitor', sel && vkey(sel)], queryFn: () => api(`/visitors/${sel.websiteId}/${sel.visitorId}${toQuery({ site: query.site })}`), enabled: Boolean(sel) });
+  const v = profile.data?.visitor;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+      <Card className="flex max-h-[calc(100vh-180px)] flex-col overflow-hidden lg:sticky lg:top-4">
+        <div className="space-y-2 border-b bg-[hsl(214_25%_97%)] p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-600"><Users2 className="h-3.5 w-3.5" />Unique visitors</h3>
+            {list.data?.meta && <span className="text-[12px] font-semibold tabular-nums text-[#1a73e8]">{num(list.data.meta.total)}</span>}
+          </div>
+          <div className="relative"><Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" /><Input className="pl-8" placeholder="Visitor ID, e.g. #A1B2C3" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
+          <div className="flex flex-wrap gap-1">
+            {SEGMENTS.map(([k, l]) => <button key={k} onClick={() => { setSegment(k); setPage(1); }} className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-medium', segment === k ? 'bg-[#1a73e8] text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50')}>{l}</button>)}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 divide-y overflow-y-auto">
+          {list.isLoading ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="space-y-1.5 px-3 py-3"><Skeleton className="h-3.5 w-2/5" /><Skeleton className="h-3 w-3/4" /><Skeleton className="h-3 w-1/2" /></div>)
+            : list.error ? <ErrorState error={list.error} onRetry={list.refetch} />
+              : !rows.length ? <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">No visitors in {rangeLabel.toLowerCase()}.</p>
+                : rows.map((r) => <VisitorCard key={vkey(r)} v={r} active={sel && vkey(sel) === vkey(r)} onClick={() => setSel(r)} />)}
+        </div>
+        <Pagination meta={list.data?.meta} onPage={setPage} />
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b bg-[hsl(214_25%_97%)] px-4 py-2.5">
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold text-slate-900">{v ? v.label : sel ? sel.label : 'Journey roadmap'}</h3>
+            {v && <p className="text-[12px] text-muted-foreground">First seen {timeAgo(v.firstSeen)} · last seen {timeAgo(v.lastSeen)} · {num(v.counts.sessions)} visits · {num(v.counts.pageviews)} pages{v.first ? ` · first came from ${CHANNELS[v.first.channel] || v.first.channel}` : ''}</p>}
+          </div>
+          <RoadmapLegend className="ml-auto" />
+          {sel && <Link href={`/visitors/${sel.websiteId}/${sel.visitorId}`} className="inline-flex items-center gap-1 text-[12px] text-[#1a73e8] hover:underline">Full profile<ExternalLink className="h-3 w-3" /></Link>}
+        </div>
+        <div className="p-4">
+          {!sel ? <EmptyState icon={Route} title="Pick a visitor" description="Choose someone from the list to see every page and action on their journey." />
+            : profile.isLoading ? <div className="space-y-3"><Skeleton className="h-9" />{Array.from({ length: 6 }).map((_, i) => <div key={i} className={cn('flex', i % 2 ? 'justify-end' : 'justify-start')}><Skeleton className="h-12 w-[45%]" /></div>)}</div>
+              : profile.error ? <ErrorState error={profile.error} onRetry={profile.refetch} />
+                : <JourneyRoadmap journey={profile.data.journey} sessions={profile.data.sessions} />}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function CommonPaths() {
   const { current, rangeLabel } = useFilters();
   const [depth, setDepth] = useState(5);
   const [fromPath, setFromPath] = useState('');
@@ -47,7 +140,6 @@ export default function JourneysPage() {
   const max = Math.max(1, ...(data?.paths || []).map((p) => p.sessions));
   return (
     <>
-      <PageHeader title="User journeys" description={`Most common page sequences per session · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
       <Card className="mb-4 flex flex-wrap items-center gap-2 px-3 py-2">
         <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); setApplied(fromPath.trim()); }}>
           <Input className="w-64" placeholder="Start from page, e.g. /properties" value={fromPath} onChange={(e) => setFromPath(e.target.value)} />
@@ -82,4 +174,30 @@ export default function JourneysPage() {
       )}
     </>
   );
+}
+
+function JourneysInner() {
+  const { current, rangeLabel } = useFilters();
+  const { can } = useAuth();
+  const params = useSearchParams();
+  const router = useRouter();
+  const people = can('visitors:read');
+  const tab = params.get('tab') === 'paths' || !people ? 'paths' : 'visitors';
+  return (
+    <>
+      <PageHeader title="User journeys" description={`${tab === 'visitors' ? 'Every unique visitor and the road they took through the site' : 'Most common page sequences per session'} · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
+      {people && (
+        <div className="mb-4 flex gap-1 border-b">
+          {[['visitors', 'Visitor journeys'], ['paths', 'Common paths']].map(([k, l]) => (
+            <button key={k} onClick={() => router.replace(`/journeys${k === 'paths' ? '?tab=paths' : ''}`)} className={cn('-mb-px border-b-2 px-3 py-1.5 text-[13px]', tab === k ? 'border-[#1a73e8] font-semibold text-[#1a73e8]' : 'border-transparent text-slate-600 hover:text-slate-900')}>{l}</button>
+          ))}
+        </div>
+      )}
+      {tab === 'visitors' ? <VisitorJourneys /> : <CommonPaths />}
+    </>
+  );
+}
+
+export default function JourneysPage() {
+  return <Suspense><JourneysInner /></Suspense>;
 }

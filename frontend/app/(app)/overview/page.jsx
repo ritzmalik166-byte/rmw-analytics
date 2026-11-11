@@ -15,18 +15,18 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Kpi, KpiGrid } from '@/components/analytics/Kpi';
-import { TrendChart } from '@/components/analytics/TrendChart';
+import { MultiTrendChart } from '@/components/analytics/MultiTrendChart';
 import { BarList } from '@/components/analytics/BarList';
 import { Panel, ExportButton } from '@/components/analytics/Panel';
 import { RangePicker } from '@/components/analytics/RangePicker';
 import { WebsiteDot } from '@/components/analytics/WebsiteDot';
 
 const METRICS = [
-  { key: 'visitors', label: 'Visitors' },
-  { key: 'sessions', label: 'Sessions' },
-  { key: 'pageviews', label: 'Page views' },
-  { key: 'leads', label: 'Leads' },
-  { key: 'conversions', label: 'Conversions' },
+  { key: 'visitors', label: 'Visitors', color: '#1a73e8' },
+  { key: 'sessions', label: 'Sessions', color: '#f9ab00' },
+  { key: 'pageviews', label: 'Page views', color: '#d93025' },
+  { key: 'leads', label: 'Leads', color: '#188038' },
+  { key: 'conversions', label: 'Conversions', color: '#7b1fa2' },
 ];
 
 function SourcesPanel() {
@@ -169,7 +169,10 @@ export default function OverviewPage() {
         <Kpi label="Leads" value={num(c?.leads)} current={c?.leads} previous={p?.leads} loading={ov.isLoading} />
       </KpiGrid>
 
-      <Card className="mt-4 overflow-hidden"><TrendChart data={ts.data?.points} interval={ts.data?.interval} loading={ts.isLoading} metrics={METRICS} /></Card>
+      <Card className="mt-4 overflow-hidden">
+        <MultiTrendChart data={ts.data?.points} interval={ts.data?.interval} loading={ts.isLoading || ov.isLoading} defaultActive={['visitors', 'sessions', 'pageviews']}
+          metrics={METRICS.map((m) => ({ ...m, value: c ? num(c[m.key]) : null }))} />
+      </Card>
 
       {site === 'all' && websites.length > 1 && <div className="mt-4"><ByWebsite /></div>}
 
