@@ -2,6 +2,7 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { AuthProvider } from '@/providers/AuthProvider';
+import { MaintenanceGate } from '@/components/MaintenanceGate';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
@@ -20,6 +21,7 @@ export default function RootLayout({ children }) {
         <QueryProvider>
           <AuthProvider>{children}</AuthProvider>
         </QueryProvider>
+        <MaintenanceGate />
         <Toaster richColors position="top-right" closeButton />
       </body>
     </html>

@@ -31,6 +31,10 @@ export async function api(path, { method = 'GET', body, signal, raw = false } = 
   }
   if (raw && res.ok) return res;
   const json = await res.json().catch(() => null);
+  const outage = res.status === 502 || res.status === 504 || (res.status === 503 && (!json || json.errorCode === 'MAINTENANCE'));
+  if (outage && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app:maintenance', { detail: { message: json?.message } }));
+  }
   if (!res.ok || json?.success === false) {
     const err = new ApiError(json?.message || `Request failed (${res.status})`, { status: res.status, errorCode: json?.errorCode, details: json?.details });
     if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) window.dispatchEvent(new CustomEvent('rmwa:unauthorized'));
