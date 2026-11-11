@@ -37,7 +37,7 @@ export function presentMe(req) {
 /** First-run detection: the login screen offers "create the first account" when no users exist. */
 router.get('/setup-status', asyncHandler(async (_req, res) => {
   const users = await col('users').estimatedDocumentCount();
-  ok(res, { needsSetup: users === 0, signupOpen: env.ALLOW_SIGNUP || users === 0 });
+  ok(res, { needsSetup: users === 0, signupOpen: env.ALLOW_SIGNUP || users === 0, loginOtp: env.LOGIN_OTP_ENABLED });
 }));
 
 router.post('/register', limiters.register, asyncHandler(async (req, res) => {
@@ -53,14 +53,14 @@ router.post('/login', limiters.login, asyncHandler(async (req, res) => {
   try {
     const user = await auth.verifyCredentials(body.email, body.password);
     // Step 2: accounts with a mobile number must confirm a code sent by SMS before a session is created.
-    if (user.mobile) {
+    if (env.LOGIN_OTP_ENABLED && user.mobile) {
       const c = await otp.startLoginChallenge(user);
       await audit({ ...req, user }, 'auth.otp_sent');
       return ok(res, { otpRequired: true, ...c }, `Verification code sent to ${c.maskedMobile}`);
     }
     await startSession(req, res, user);
     await audit({ ...req, user }, 'auth.login', { meta: { otp: false } });
-    return ok(res, { userId: String(user._id), otpRequired: false, mobileMissing: true }, 'Signed in');
+    return ok(res, { userId: String(user._id), otpRequired: false, mobileMissing: !user.mobile }, 'Signed in');
   } catch (err) {
     await audit(req, 'auth.login_failed', { meta: { emailHash: sha256(body.email).slice(0, 16) } });
     throw err;

@@ -106,7 +106,7 @@ function LoginForm() {
   return (
     <AuthCard
       title={register ? (setup?.needsSetup ? 'Set up RMW Analytics' : 'Create an account') : 'Sign in'}
-      description={register ? 'Create the first Super Admin account and organisation.' : 'Use your work email and password. You will then get a code on your mobile.'}
+      description={register ? 'Create the first Super Admin account and organisation.' : `Use your work email and password.${setup?.loginOtp === false ? '' : ' You will then get a code on your mobile.'}`}
       footer={setup?.signupOpen && !setup?.needsSetup && (
         <button className="underline" onClick={() => { setError(''); setMode(register ? 'login' : 'register'); }}>{register ? 'Have an account? Sign in' : 'New here? Create an account'}</button>
       )}

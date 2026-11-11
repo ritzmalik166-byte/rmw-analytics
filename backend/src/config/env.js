@@ -33,6 +33,8 @@ const schema = z.object({
   SMS_SENDER_ID: z.string().optional(),
   SMS_OTP_TEMPLATE: z.string().optional(),
   SMS_TEMPLATE_ID: z.string().optional(),
+  // false = sign in with email + password only (SMS step skipped even when a mobile is set)
+  LOGIN_OTP_ENABLED: bool(true),
   OTP_LENGTH: int(6),
   OTP_TTL_SECONDS: int(300),
   OTP_MAX_ATTEMPTS: int(5),
