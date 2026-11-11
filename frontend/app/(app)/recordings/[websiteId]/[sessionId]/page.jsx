@@ -27,12 +27,14 @@ export default function RecordingPage({ params }) {
   const [rec, setRec] = useState(null);
   const [error, setError] = useState(null);
   const [now, setNow] = useState(0);
+  const [filesMissing, setFilesMissing] = useState(false);
   const lastSeq = useRef(-1);
 
   const load = useCallback(async () => {
     try {
       const d = await api(`/replays/${websiteId}/${sessionId}${lastSeq.current >= 0 ? `?after=${lastSeq.current}` : ''}`);
       setRec(d.replay);
+      if (d.filesMissing) setFilesMissing(true);
       if (d.chunks.length) {
         lastSeq.current = d.lastSeq;
         const fresh = d.chunks.flatMap((c) => c.events);
@@ -93,7 +95,9 @@ export default function RecordingPage({ params }) {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
         <div>
-          {noSnapshot ? (
+          {filesMissing ? (
+            <Card className="px-4 py-16 text-center text-[13px] text-muted-foreground">The recording files for this visit are not on this server. Recordings are stored on the disk of the API server that received them — open it from the deployed dashboard, or point this dashboard at that API.</Card>
+          ) : noSnapshot ? (
             <Card className="px-4 py-16 text-center text-[13px] text-muted-foreground">This recording has no page snapshot yet. If the visit is live, it will appear in a few seconds.</Card>
           ) : (
             <ReplayPlayer ref={player} events={events} live={Boolean(rec?.live)} onTime={setNow} />

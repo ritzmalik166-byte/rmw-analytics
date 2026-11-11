@@ -19,10 +19,11 @@ const DEVICE_ICON = { mobile: Smartphone, tablet: Tablet, desktop: Monitor };
 export default function RecordingsPage() {
   const { query, current, rangeLabel, websites } = useFilters();
   const { can } = useAuth();
-  const [live, setLive] = useState(false);
+  const [status, setStatus] = useState('completed');
+  const live = status === 'live';
   const [minSeconds, setMinSeconds] = useState(0);
   const [page, setPage] = useState(1);
-  const q = { ...query, live: live || undefined, min_seconds: minSeconds || undefined, page, limit: 25 };
+  const q = { ...query, status, min_seconds: minSeconds || undefined, page, limit: 25 };
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['replays', q], queryFn: () => api(`/replays${toQuery(q)}`), placeholderData: keepPreviousData, refetchInterval: 15_000,
   });
@@ -30,7 +31,7 @@ export default function RecordingsPage() {
 
   return (
     <>
-      <PageHeader title="Recordings" description={`Watch real visits back like a video, or follow one live · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
+      <PageHeader title="Recordings" description={`Watch completed visits back like a video · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
       {!enabledSites.length && (
         <Card className="mb-4 flex flex-wrap items-center gap-3 border-[#f9ab00]/50 bg-[#f9ab00]/10 px-4 py-3 text-[13px]">
           <Video className="h-5 w-5 text-[#b06000]" />
@@ -39,10 +40,16 @@ export default function RecordingsPage() {
         </Card>
       )}
       <Card className="mb-4 flex flex-wrap items-center gap-2 px-3 py-2">
-        <button type="button" onClick={() => { setLive((v) => !v); setPage(1); }}
-          className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold', live ? 'bg-[#d93025] text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50')}>
-          <span className={cn('h-2 w-2 rounded-full', live ? 'animate-pulse bg-white' : 'bg-[#d93025]')} />Live now
-        </button>
+        <div className="inline-flex rounded-full bg-slate-100 p-0.5" role="tablist">
+          <button type="button" role="tab" aria-selected={!live} onClick={() => { setStatus('completed'); setPage(1); }}
+            className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold', !live ? 'bg-[#1a73e8] text-white shadow' : 'text-slate-700 hover:bg-white')}>
+            <PlayCircle className="h-3.5 w-3.5" />Completed
+          </button>
+          <button type="button" role="tab" aria-selected={live} onClick={() => { setStatus('live'); setPage(1); }}
+            className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold', live ? 'bg-[#d93025] text-white shadow' : 'text-slate-700 hover:bg-white')}>
+            <span className={cn('h-2 w-2 rounded-full', live ? 'animate-pulse bg-white' : 'bg-[#d93025]')} />Live now
+          </button>
+        </div>
         <Select className="w-44" value={minSeconds} onChange={(e) => { setMinSeconds(Number(e.target.value)); setPage(1); }} aria-label="Minimum length">
           <option value={0}>Any length</option><option value={10}>Longer than 10 s</option><option value={30}>Longer than 30 s</option><option value={60}>Longer than 1 min</option><option value={300}>Longer than 5 min</option>
         </Select>
@@ -50,7 +57,7 @@ export default function RecordingsPage() {
       </Card>
       <Card className="overflow-hidden">
         {error ? <ErrorState error={error} onRetry={refetch} /> : isLoading && !data ? <TableSkeleton rows={8} cols={7} /> : !data?.rows?.length ? (
-          <EmptyState icon={Video} title={live ? 'Nobody is on the site right now' : 'No recordings in this period'} description={live ? 'Live visits appear here within a few seconds of someone opening a page.' : 'Recordings appear once a website has recordings turned on and people visit it.'} />
+          <EmptyState icon={Video} title={live ? 'Nobody is on the site right now' : 'No completed recordings in this period'} description={live ? 'Live visits appear here within a few seconds of someone opening a page.' : 'A recording shows up here about a minute after the visitor finishes their visit. Visits still in progress are under “Live now”.'} />
         ) : (
           <Table>
             <TableHeader><TableRow><TableHead /><TableHead>Visitor</TableHead><TableHead>Started</TableHead><TableHead>Length</TableHead><TableHead>Pages</TableHead><TableHead>Device / location</TableHead><TableHead>Came from</TableHead></TableRow></TableHeader>

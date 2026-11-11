@@ -4,10 +4,10 @@ import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Trash2, PlayCircle, Video } from 'lucide-react';
 import { CHANNELS } from '@rmw-analytics/shared/channels';
 import { api, download, apiMessage } from '@/lib/api';
-import { num, countryName, flag, formatDateTime, duration, titleCase } from '@/lib/utils';
+import { cn, num, countryName, flag, formatDateTime, duration, titleCase, timeAgo } from '@/lib/utils';
 import { useAuth } from '@/providers/AuthProvider';
 import { PageHeader, ErrorState, PageSkeleton } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,50 @@ function Fact({ label, children }) {
   );
 }
 
+function RecordingRow({ r, websiteId }) {
+  const href = `/recordings/${websiteId}/${r.sessionId}`;
+  return (
+    <li className="flex items-center gap-3 px-3 py-2">
+      <Link href={href} aria-label="Play recording" className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></Link>
+      <div className="min-w-0 flex-1">
+        <Link href={href} className="block text-[13px] font-medium text-slate-800 hover:underline">{formatDateTime(r.firstAt)}</Link>
+        <span className="block truncate text-[11px] text-muted-foreground" title={r.pages.join(', ')}>{r.pages.length || 1} page{r.pages.length === 1 ? '' : 's'} · {r.entryPath || '—'}</span>
+      </div>
+      {r.converted && <Badge variant="success">Converted</Badge>}
+      <span className="shrink-0 text-right text-[12px] tabular-nums text-slate-700">{duration(r.durationMs)}<span className="block text-[11px] text-muted-foreground">{timeAgo(r.lastAt)}</span></span>
+    </li>
+  );
+}
+
+function VisitorRecordings({ websiteId, visitorId }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['replays', 'visitor', websiteId, visitorId],
+    queryFn: () => api(`/replays?site=${websiteId}&visitor=${encodeURIComponent(visitorId)}&status=all&limit=100`),
+    refetchInterval: 30_000,
+  });
+  const rows = data?.rows || [];
+  const live = rows.filter((r) => r.live);
+  const done = rows.filter((r) => !r.live);
+  return (
+    <Panel title={`Recordings (${done.length})`}>
+      {isLoading ? <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">Loading recordings…</p> : !rows.length ? (
+        <div className="flex items-center gap-2 px-3 py-6 text-[13px] text-muted-foreground"><Video className="h-4 w-4" />No recordings for this visitor yet.</div>
+      ) : (
+        <>
+          {live.length > 0 && (
+            <div className="border-b bg-[#d93025]/5">
+              <p className="flex items-center gap-1.5 px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-[#d93025]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#d93025]" />On the site now</p>
+              <ul className="divide-y">{live.map((r) => <RecordingRow key={r.sessionId} r={r} websiteId={websiteId} />)}</ul>
+            </div>
+          )}
+          {done.length ? <ul className="max-h-[360px] divide-y overflow-y-auto">{done.map((r) => <RecordingRow key={r.sessionId} r={r} websiteId={websiteId} />)}</ul>
+            : <p className="px-3 py-4 text-[12px] text-muted-foreground">The recording will be ready here about a minute after the current visit ends.</p>}
+        </>
+      )}
+    </Panel>
+  );
+}
+
 export default function VisitorProfilePage({ params }) {
   const { websiteId, visitorId } = use(params);
   const router = useRouter();
@@ -34,6 +78,8 @@ export default function VisitorProfilePage({ params }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const { data, isLoading, error, refetch } = useQuery({ queryKey: ['visitor', websiteId, visitorId], queryFn: () => api(`/visitors/${websiteId}/${visitorId}`) });
+  const recs = useQuery({ queryKey: ['replays', 'visitor', websiteId, visitorId], queryFn: () => api(`/replays?site=${websiteId}&visitor=${encodeURIComponent(visitorId)}&status=all&limit=100`), refetchInterval: 30_000 });
+  const recBySession = new Map((recs.data?.rows || []).map((r) => [r.sessionId, r]));
   if (isLoading) return <PageSkeleton />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   const v = data.visitor;
@@ -108,10 +154,11 @@ export default function VisitorProfilePage({ params }) {
           )}
         </div>
         <div className="space-y-4 lg:col-span-2">
+          <VisitorRecordings websiteId={websiteId} visitorId={visitorId} />
           <Panel title="Journey" bodyClassName="max-h-[640px] overflow-y-auto"><Journey events={data.journey} /></Panel>
           <Panel title={`Sessions (${data.sessions.length})`}>
             <Table>
-              <TableHeader><TableRow><TableHead>Started</TableHead><TableHead>Source</TableHead><TableHead>Entry → exit</TableHead><TableHead className="text-right">Pages</TableHead><TableHead className="text-right">Duration</TableHead><TableHead /></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Started</TableHead><TableHead>Source</TableHead><TableHead>Entry → exit</TableHead><TableHead className="text-right">Pages</TableHead><TableHead className="text-right">Duration</TableHead><TableHead /><TableHead /></TableRow></TableHeader>
               <TableBody>
                 {data.sessions.map((s) => (
                   <TableRow key={s.sessionId}>
@@ -121,6 +168,10 @@ export default function VisitorProfilePage({ params }) {
                     <TableCell className="text-right tabular-nums">{s.pageviews}</TableCell>
                     <TableCell className="text-right tabular-nums">{duration(s.durationMs)}</TableCell>
                     <TableCell>{s.converted ? <Badge variant="success">Converted</Badge> : s.bounced ? <Badge>Bounced</Badge> : null}</TableCell>
+                    <TableCell className="w-10">{recBySession.has(s.sessionId) && (
+                      <Link href={`/recordings/${websiteId}/${s.sessionId}`} title={recBySession.get(s.sessionId).live ? 'Live now' : 'Watch recording'} aria-label="Watch recording"
+                        className={cn('flex h-7 w-7 items-center justify-center rounded-full text-white', recBySession.get(s.sessionId).live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></Link>
+                    )}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
