@@ -26,7 +26,7 @@ const DIMS = ['channel', 'source', 'referrer', 'utm_source', 'utm_medium', 'utm_
 // ─── Session recordings ────────────────────────────────────────────────────
 router.get('/replays', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
   const p = parsePagination(req.query);
-  const r = await replays.listReplays(req.scope, { ...p, live: req.query.live === 'true', minSeconds: Number(req.query.min_seconds) || 0, visitorId: req.query.visitor || undefined });
+  const r = await replays.listReplays(req.scope, { ...p, status: req.query.live === 'true' ? 'live' : ['live', 'completed', 'all'].includes(req.query.status) ? req.query.status : 'completed', minSeconds: Number(req.query.min_seconds) || 0, visitorId: req.query.visitor || undefined });
   ok(res, { rows: r.rows, meta: pageMeta(r.page, r.limit, r.total) });
 }));
 router.get('/replays/:websiteId/:sessionId', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {

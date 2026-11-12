@@ -52,7 +52,13 @@ test('replay: chunks are stored, listed and fetched incrementally (live)', async
   assert.equal((await chunk(0, snapshot, undefined, true)).status, 202);
   assert.equal((await chunk(1, [{ type: 3, timestamp: now + 4000, data: { source: 1, positions: [] } }])).status, 202);
 
-  const list = await owner.get('/replays');
+  const done = await owner.get('/replays');
+  assert.equal(done.status, 200);
+  assert.equal(done.data.rows.length, 0, 'in-progress recordings are hidden from the default (completed) list');
+  const byVisitor = await owner.get(`/replays?status=all&visitor=${VID}`);
+  assert.equal(byVisitor.data.rows.length, 1, 'visitor filter lists their recordings');
+
+  const list = await owner.get('/replays?live=true');
   assert.equal(list.status, 200);
   const row = list.data.rows[0];
   assert.equal(row.sessionId, SID);

@@ -16,6 +16,15 @@ function tzOffsetMs(date, tz) {
   return asUtc - Math.floor(date.getTime() / 1000) * 1000;
 }
 
+/**
+ * Start of the hour containing `ms`, in `tz`, as epoch ms. Matches Mongo's $dateTrunc({ unit: 'hour', timezone }),
+ * which matters for half-hour zones like IST where local hours start at :30 UTC.
+ */
+export function startOfHourInTz(ms, tz = DEFAULT_TZ) {
+  const off = tzOffsetMs(new Date(ms), tz);
+  return Math.floor((ms + off) / 3600_000) * 3600_000 - off;
+}
+
 /** Midnight (start of day) in `tz` for "YYYY-MM-DD", as a UTC Date. */
 export function startOfDayInTz(day, tz = DEFAULT_TZ) {
   const [y, m, d] = day.split('-').map(Number);

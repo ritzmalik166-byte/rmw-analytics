@@ -70,10 +70,18 @@ async function sessionsFor(rows) {
   return new Map(ss.map((s) => [`${s.websiteId}:${s.sessionId}`, s]));
 }
 
-export async function listReplays({ websiteIds, websites, range }, { live, minSeconds, visitorId, page, limit, skip }) {
-  // A recording belongs to the period when it overlaps it (an in-progress recording's lastAt is ~now).
-  const filter = { websiteId: { $in: websiteIds }, firstAt: { $lte: range.to }, lastAt: { $gte: live ? new Date(Date.now() - LIVE_MS) : range.from } };
+/**
+ * status: 'live' (still recording), 'completed' (visitor finished — no new chunk for LIVE_MS), 'all'.
+ * A visitor filter lists every recording of that visitor regardless of the date range.
+ */
+export async function listReplays({ websiteIds, websites, range }, { status = 'completed', minSeconds, visitorId, page, limit, skip }) {
+  const liveCutoff = new Date(Date.now() - LIVE_MS);
+  const filter = { websiteId: { $in: websiteIds } };
   if (visitorId) filter.visitorId = String(visitorId);
+  else { filter.firstAt = { $lte: range.to }; filter.lastAt = { $gte: range.from }; }
+  // A recording belongs to the period when it overlaps it (an in-progress recording's lastAt is ~now).
+  if (status === 'live') filter.lastAt = { $gte: liveCutoff };
+  else if (status === 'completed') filter.lastAt = { ...(filter.lastAt || {}), $lt: liveCutoff };
   if (minSeconds) filter.$expr = { $gte: [{ $subtract: ['$lastAt', '$firstAt'] }, Number(minSeconds) * 1000] };
   const [rows, total] = await Promise.all([
     col('replays').find(filter).sort({ lastAt: -1 }).skip(skip).limit(limit).toArray(),
@@ -105,7 +113,9 @@ export async function getReplay(scope, websiteId, sessionId, { after = -1 } = {}
     try { chunks.push({ seq, events: JSON.parse((await gunzip(await fs.readFile(path.join(dir, `${seq}.json.gz`)))).toString('utf8')) }); } catch { /* skip unreadable chunk */ }
   }
   const sess = await sessionsFor([r]);
-  return { replay: present(r, scope.allWebsites, sess.get(`${r.websiteId}:${r.sessionId}`)), chunks, lastSeq: seqs.length ? seqs[seqs.length - 1] : after };
+  // The index lives in MongoDB but chunk files live on the disk of the server that received them.
+  const filesMissing = after < 0 && !files.length && r.chunks > 0;
+  return { replay: present(r, scope.allWebsites, sess.get(`${r.websiteId}:${r.sessionId}`)), chunks, filesMissing, lastSeq: seqs.length ? seqs[seqs.length - 1] : after };
 }
 
 export async function deleteReplay(scope, websiteId, sessionId) {

@@ -15,7 +15,8 @@
     "migrate": "node database/src/cli.js migrate",
     "seed": "node src/scripts/seed.js",
     "create-owner": "node src/scripts/createOwner.js",
-    "test": "node --test --test-concurrency=1"
+    "test": "node --test --test-concurrency=1",
+    "geoip:update": "node src/scripts/updateGeoip.js"
   },
   "dependencies": {
     "@rmw-analytics/database": "file:./database",

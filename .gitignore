@@ -8,5 +8,5 @@ dist/
 *.log
 coverage/
 .mongo-data/
-data/geoip/*.mmdb
+**/data/geoip/*.mmdb
 backend/data/replays/

@@ -1,5 +1,7 @@
 import { env } from '../config/env.js';
+import fs from 'node:fs';
 import { logger } from '../config/logger.js';
+import { DEFAULT_GEOIP_PATH, downloadGeoip } from '../scripts/updateGeoip.js';
 
 /**
  * Approximate location for a request. The IP address is only used here, transiently, and never stored.
@@ -9,15 +11,28 @@ import { logger } from '../config/logger.js';
 let reader = null;
 let readerLoading = null;
 
+/**
+ * Uses GEOIP_DB_PATH if set, else the bundled default (data/geoip/dbip-city-lite.mmdb). If the default file is
+ * missing it is downloaded once in the background (free DB-IP Lite); until then lookups fall back to CDN headers.
+ * Without any database every visitor's location was "Unknown", since this server isn't behind a geo-CDN.
+ */
+let downloadStarted = false;
 async function getReader() {
-  if (!env.GEOIP_DB_PATH) return null;
   if (reader) return reader;
-  if (!readerLoading) {
-    readerLoading = import('maxmind')
-      .then((m) => m.default.open(env.GEOIP_DB_PATH))
-      .then((r) => { reader = r; logger.info('GeoIP database loaded'); return r; })
-      .catch((err) => { logger.warn({ err: err.message }, 'GeoIP database unavailable; falling back to CDN headers'); return null; });
+  if (readerLoading) return readerLoading;
+  const dbPath = env.GEOIP_DB_PATH || DEFAULT_GEOIP_PATH;
+  if (!fs.existsSync(dbPath)) {
+    if (!env.GEOIP_DB_PATH && !downloadStarted && env.NODE_ENV !== 'test') {
+      downloadStarted = true;
+      downloadGeoip(dbPath, (m) => logger.info(m))
+        .catch((err) => logger.warn({ err: err.message }, 'GeoIP auto-download failed; run `npm run geoip:update`'));
+    }
+    return null;
   }
+  readerLoading = import('maxmind')
+    .then((m) => m.default.open(dbPath, { watchForUpdates: true }))
+    .then((r) => { reader = r; logger.info({ dbPath }, 'GeoIP database loaded'); return r; })
+    .catch((err) => { logger.warn({ err: err.message }, 'GeoIP database unavailable; falling back to CDN headers'); readerLoading = null; return null; });
   return readerLoading;
 }
 

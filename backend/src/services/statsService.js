@@ -1,19 +1,37 @@
 import { CHANNELS, EVENT_LABELS } from '@rmw-analytics/shared';
 import { col } from '../config/db.js';
 import { escapeRegex } from '../utils/http.js';
-import { DAY_MS, daysBetween, dayKey } from '../utils/dates.js';
+import { DAY_MS, daysBetween, dayKey, startOfHourInTz } from '../utils/dates.js';
 import { activeVisitors, recentFeed, ACTIVE_WINDOW_MS } from './realtime.js';
 
 const EXACT_OVERVIEW_MAX_DAYS = 92;
+/** Every kind of click the tracker records. "Clicks" = unique people who clicked at least once (1 person = 1 click). */
+export const CLICK_EVENTS = ['click', 'rage_click', 'dead_click', 'outbound_click', 'contact_click'];
+
+/** Unique clickers per bucket. `bucket` is a Mongo expression on $ts, or null for a single total. */
+function uniqueClickers(websiteIds, from, to, bucket = null) {
+  return col('events').aggregate([
+    { $match: { websiteId: { $in: websiteIds }, name: { $in: CLICK_EVENTS }, ts: { $gte: from, $lte: to } } },
+    { $group: { _id: { t: bucket, w: '$websiteId', v: '$visitorId' } } },
+    { $group: { _id: '$_id.t', n: { $sum: 1 } } },
+  ], { allowDiskUse: true }).toArray();
+}
 const ratio = (a, b) => (b ? a / b : 0);
 const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
+
+/**
+ * Google Analytics-style "engaged" session: 10s+ active, or 2+ page views, or a conversion
+ * (i.e. not bounced; see ingestService). GA reports people from engaged sessions, so a quick
+ * open-and-leave doesn't inflate the visitor count. 1 for engaged, else 0.
+ */
+const ENGAGED = { $cond: [{ $eq: ['$bounced', false] }, 1, 0] };
 
 // ─── Overview ──────────────────────────────────────────────────────────────
 async function sessionTotals(websiteIds, from, to) {
   const [t] = await col('sessions').aggregate([
     { $match: { websiteId: { $in: websiteIds }, startedAt: { $gte: from, $lte: to } } },
-    { $group: { _id: { w: '$websiteId', v: '$visitorId' }, s: { $sum: 1 }, pv: { $sum: '$pageviews' }, b: { $sum: { $cond: ['$bounced', 1, 0] } }, d: { $sum: '$durationMs' }, isNew: { $max: '$isNew' }, returned: { $max: { $cond: ['$isNew', 0, 1] } } } },
-    { $group: { _id: null, visitors: { $sum: 1 }, newVisitors: { $sum: { $cond: ['$isNew', 1, 0] } }, returningVisitors: { $sum: '$returned' }, sessions: { $sum: '$s' }, pageviews: { $sum: '$pv' }, bounces: { $sum: '$b' }, durationMs: { $sum: '$d' } } },
+    { $group: { _id: { w: '$websiteId', v: '$visitorId' }, s: { $sum: 1 }, pv: { $sum: '$pageviews' }, b: { $sum: { $cond: ['$bounced', 1, 0] } }, d: { $sum: '$durationMs' }, isNew: { $max: '$isNew' }, returned: { $max: { $cond: ['$isNew', 0, 1] } }, engaged: { $max: ENGAGED } } },
+    { $group: { _id: null, visitors: { $sum: 1 }, engagedVisitors: { $sum: '$engaged' }, newVisitors: { $sum: { $cond: ['$isNew', 1, 0] } }, returningVisitors: { $sum: '$returned' }, sessions: { $sum: '$s' }, pageviews: { $sum: '$pv' }, bounces: { $sum: '$b' }, durationMs: { $sum: '$d' } } },
   ], { allowDiskUse: true }).toArray();
   return t || { visitors: 0, newVisitors: 0, sessions: 0, pageviews: 0, bounces: 0, durationMs: 0 };
 }
@@ -23,19 +41,24 @@ async function rollupTotals(websiteIds, fromDay, toDay) {
     { $match: { websiteId: { $in: websiteIds }, day: { $gte: fromDay, $lte: toDay } } },
     { $group: { _id: null, visitors: { $sum: '$visitors' }, newVisitors: { $sum: '$newVisitors' }, sessions: { $sum: '$sessions' }, pageviews: { $sum: '$pageviews' }, bounces: { $sum: '$bounces' }, durationMs: { $sum: '$durationMs' } } },
   ]).toArray();
-  return t || { visitors: 0, newVisitors: 0, sessions: 0, pageviews: 0, bounces: 0, durationMs: 0 };
+  if (!t) return { visitors: 0, engagedVisitors: 0, newVisitors: 0, sessions: 0, pageviews: 0, bounces: 0, durationMs: 0 };
+  // Rollups have no per-visitor engagement; approximate with the engaged-session share (ranges > 92 days only).
+  return { ...t, engagedVisitors: Math.round(t.visitors * (1 - ratio(t.bounces, t.sessions))) };
 }
 
 async function periodMetrics(websiteIds, from, to, { exact, fromDay, toDay }) {
   const range = { $gte: from, $lte: to };
-  const [s, leads, conv, searches] = await Promise.all([
+  const [s, leads, conv, searches, clickers] = await Promise.all([
     exact ? sessionTotals(websiteIds, from, to) : rollupTotals(websiteIds, fromDay, toDay),
     col('leads').countDocuments({ websiteId: { $in: websiteIds }, ts: range }),
     col('conversions').aggregate([{ $match: { websiteId: { $in: websiteIds }, ts: range } }, { $group: { _id: null, n: { $sum: 1 }, value: { $sum: '$value' } } }]).toArray(),
     col('searches').countDocuments({ websiteId: { $in: websiteIds }, ts: range }),
+    uniqueClickers(websiteIds, from, to),
   ]);
   return {
-    visitors: s.visitors,
+    // "Visitors" matches Google Analytics: people with at least one engaged session. allVisitors = every visitor.
+    visitors: s.engagedVisitors ?? 0,
+    allVisitors: s.visitors,
     newVisitors: s.newVisitors,
     // Visitors with at least one returning session in the period (may overlap with new visitors, like GA).
     returningVisitors: s.returningVisitors ?? Math.max(0, s.visitors - s.newVisitors),
@@ -50,6 +73,7 @@ async function periodMetrics(websiteIds, from, to, { exact, fromDay, toDay }) {
     conversionRate: round(ratio(conv[0]?.n || 0, s.sessions) * 100, 2),
     leads,
     searches,
+    clicks: clickers[0]?.n || 0,
   };
 }
 
@@ -69,11 +93,11 @@ export async function overview({ websiteIds, range }) {
 export async function timeseries({ websiteIds, range }) {
   if (range.interval === 'hour') {
     const unit = { $dateTrunc: { date: '$startedAt', unit: 'hour', timezone: range.tz } };
-    const [sess, pvs, leads] = await Promise.all([
+    const [sess, pvs, leads, conv, clickers] = await Promise.all([
       col('sessions').aggregate([
         { $match: { websiteId: { $in: websiteIds }, startedAt: { $gte: range.from, $lte: range.to } } },
-        { $group: { _id: { t: unit, v: '$visitorId', w: '$websiteId' }, s: { $sum: 1 } } },
-        { $group: { _id: '$_id.t', visitors: { $sum: 1 }, sessions: { $sum: '$s' } } },
+        { $group: { _id: { t: unit, v: '$visitorId', w: '$websiteId' }, s: { $sum: 1 }, e: { $max: ENGAGED } } },
+        { $group: { _id: '$_id.t', visitors: { $sum: '$e' }, sessions: { $sum: '$s' } } },
       ]).toArray(),
       col('pageViews').aggregate([
         { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to } } },
@@ -83,16 +107,34 @@ export async function timeseries({ websiteIds, range }) {
         { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to } } },
         { $group: { _id: { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, n: { $sum: 1 } } },
       ]).toArray(),
+      col('conversions').aggregate([
+        { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to } } },
+        { $group: { _id: { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, n: { $sum: 1 } } },
+      ]).toArray(),
+      uniqueClickers(websiteIds, range.from, range.to, { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }),
     ]);
+    // Buckets must start on local (tz) hours, exactly like $dateTrunc above. Using UTC hours here made every
+    // lookup miss in IST (+5:30), so the 24h chart showed a flat zero line even though totals had data.
     const map = new Map();
-    const start = Math.floor(range.from.getTime() / 3600_000) * 3600_000;
-    for (let t = start; t <= range.to.getTime(); t += 3600_000) map.set(t, { t: new Date(t).toISOString(), visitors: 0, sessions: 0, pageviews: 0, leads: 0, conversions: 0 });
+    const start = startOfHourInTz(range.from.getTime(), range.tz);
+    for (let t = start; t <= range.to.getTime(); t += 3600_000) map.set(t, { t: new Date(t).toISOString(), visitors: 0, sessions: 0, pageviews: 0, leads: 0, conversions: 0, clicks: 0 });
     const at = (d) => map.get(new Date(d).getTime());
     sess.forEach((r) => { const p = at(r._id); if (p) { p.visitors = r.visitors; p.sessions = r.sessions; } });
     pvs.forEach((r) => { const p = at(r._id); if (p) p.pageviews = r.n; });
     leads.forEach((r) => { const p = at(r._id); if (p) p.leads = r.n; });
+    conv.forEach((r) => { const p = at(r._id); if (p) p.conversions = r.n; });
+    clickers.forEach((r) => { const p = at(r._id); if (p) p.clicks = r.n; });
     return { interval: 'hour', points: [...map.values()] };
   }
+  const dayKeyExpr = { $dateToString: { date: '$startedAt', format: '%Y-%m-%d', timezone: range.tz } };
+  const dayEngaged = await col('sessions').aggregate([
+    { $match: { websiteId: { $in: websiteIds }, startedAt: { $gte: range.from, $lte: range.to } } },
+    { $group: { _id: { t: dayKeyExpr, v: '$visitorId', w: '$websiteId' }, e: { $max: ENGAGED } } },
+    { $group: { _id: '$_id.t', n: { $sum: '$e' } } },
+  ], { allowDiskUse: true }).toArray();
+  const engagedByDay = Object.fromEntries(dayEngaged.map((r) => [r._id, r.n]));
+  const dayClicks = await uniqueClickers(websiteIds, range.from, range.to, { $dateToString: { date: '$ts', format: '%Y-%m-%d', timezone: range.tz } });
+  const clicksByDay = Object.fromEntries(dayClicks.map((r) => [r._id, r.n]));
   const rows = await col('aggDaily').aggregate([
     { $match: { websiteId: { $in: websiteIds }, day: { $gte: range.fromDay, $lte: range.toDay } } },
     { $group: { _id: '$day', visitors: { $sum: '$visitors' }, sessions: { $sum: '$sessions' }, pageviews: { $sum: '$pageviews' }, leads: { $sum: '$leads' }, conversions: { $sum: '$conversions' }, bounces: { $sum: '$bounces' }, searches: { $sum: '$searches' } } },
@@ -100,7 +142,7 @@ export async function timeseries({ websiteIds, range }) {
   const byDay = Object.fromEntries(rows.map((r) => [r._id, r]));
   const points = daysBetween(range.fromDay, range.toDay).map((d) => {
     const r = byDay[d] || {};
-    return { t: d, visitors: r.visitors || 0, sessions: r.sessions || 0, pageviews: r.pageviews || 0, leads: r.leads || 0, conversions: r.conversions || 0, searches: r.searches || 0, bounceRate: r.sessions ? round((r.bounces / r.sessions) * 100) : 0 };
+    return { t: d, visitors: engagedByDay[d] ?? Math.round((r.visitors || 0) * (1 - ratio(r.bounces || 0, r.sessions || 0))), sessions: r.sessions || 0, pageviews: r.pageviews || 0, leads: r.leads || 0, conversions: r.conversions || 0, clicks: clicksByDay[d] || 0, searches: r.searches || 0, bounceRate: r.sessions ? round((r.bounces / r.sessions) * 100) : 0 };
   });
   return { interval: 'day', points };
 }

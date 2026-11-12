@@ -14,14 +14,19 @@ function start(o) {
   const w = window;
   const url = `${o.api.replace(/\/$/, '')}/api/v1/replay`;
   let buf = [];
-  let seq = 0;
   let sid = o.getIds().sid;
+  // Chunk numbers must keep increasing across page loads of one session, or a new page overwrites the
+  // previous page's chunks on the server. Persist the counter per session in sessionStorage.
+  const seqKey = (s) => `rmwa_rseq_${s}`;
+  const loadSeq = (s) => { try { return parseInt(w.sessionStorage.getItem(seqKey(s)), 10) || 0; } catch (e) { return 0; } };
+  let seq = loadSeq(sid);
+  const nextSeq = () => { const n = seq++; try { w.sessionStorage.setItem(seqKey(sid), String(seq)); } catch (e) { /* storage blocked */ } return n; };
   let stop = null;
   let timer = null;
 
   const payload = (events) => {
     const ids = o.getIds();
-    return JSON.stringify({ siteId: o.siteId, vid: ids.vid, sid, seq: seq++, t: Date.now(), events });
+    return JSON.stringify({ siteId: o.siteId, vid: ids.vid, sid, seq: nextSeq(), t: Date.now(), events });
   };
 
   async function send(body) {
@@ -54,7 +59,7 @@ function start(o) {
       if (cur && cur !== sid) {
         flush(false);
         sid = cur;
-        seq = 0;
+        seq = loadSeq(cur);
         w.setTimeout(() => { try { record.takeFullSnapshot(true); } catch (err) { /* ignore */ } }, 0);
       }
       buf.push(e);

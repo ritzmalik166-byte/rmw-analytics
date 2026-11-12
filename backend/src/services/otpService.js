@@ -29,7 +29,7 @@ async function sendSms(mobile, otp) {
   url.searchParams.set('apikey', env.SMS_API_KEY);
   url.searchParams.set('senderid', env.SMS_SENDER_ID);
   url.searchParams.set('number', providerNumber(mobile));
-  url.searchParams.set('message', env.SMS_OTP_TEMPLATE.replace('{otp}', otp));
+  url.searchParams.set('message', env.SMS_OTP_TEMPLATE.replace(/{#(?:num|var)#}|{otp}/, otp));
   if (env.SMS_TEMPLATE_ID) url.searchParams.set('templateid', env.SMS_TEMPLATE_ID);
   try {
     const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
