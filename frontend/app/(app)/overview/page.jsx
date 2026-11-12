@@ -14,7 +14,6 @@ import { DashboardSkeleton } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Kpi, KpiGrid } from '@/components/analytics/Kpi';
 import { MultiTrendChart } from '@/components/analytics/MultiTrendChart';
 import { BarList } from '@/components/analytics/BarList';
 import { Panel, ExportButton } from '@/components/analytics/Panel';
@@ -25,9 +24,23 @@ const METRICS = [
   { key: 'visitors', label: 'Visitors', color: '#1a73e8' },
   { key: 'sessions', label: 'Sessions', color: '#f9ab00' },
   { key: 'pageviews', label: 'Page views', color: '#d93025' },
+  { key: 'clicks', label: 'Clicks', color: '#e8710a' },
   { key: 'leads', label: 'Leads', color: '#188038' },
   { key: 'conversions', label: 'Conversions', color: '#7b1fa2' },
 ];
+
+/** Secondary line under each chart tile: keeps the detail the old KPI boxes showed. */
+function tileHint(key, c) {
+  switch (key) {
+    case 'visitors': return `Engaged people · ${num(c.newVisitors)} new, ${num(c.returningVisitors)} returning`;
+    case 'sessions': return `${pct(c.engagementRate)} engaged · avg ${duration(c.avgSessionMs)}`;
+    case 'pageviews': return `${c.pagesPerSession} pages / session`;
+    case 'clicks': return 'Unique people who clicked';
+    case 'leads': return `${num(c.searches)} searches`;
+    case 'conversions': return `${pct(c.conversionRate, 2)} of sessions`;
+    default: return null;
+  }
+}
 
 function SourcesPanel() {
   const [tab, setTab] = useState('channel');
@@ -138,6 +151,8 @@ export default function OverviewPage() {
   const countries = useStats('/stats/dimension/country', { limit: 8 });
   const c = ov.data?.current;
   const p = ov.data?.previous;
+  // placeholderData keeps the previous range on screen while the new one loads; show that it's updating.
+  const refreshing = (ov.isPlaceholderData && ov.isFetching) || (ts.isPlaceholderData && ts.isFetching);
 
   if (websitesLoading) return <DashboardSkeleton />;
   if (!websites.length) {
@@ -156,22 +171,13 @@ export default function OverviewPage() {
         description={`${current ? current.name : 'All websites'} · ${rangeLabel}${ov.data?.approximateVisitors ? ' · visitor totals are approximate for ranges over 92 days' : ''}`}
         actions={<><RangePicker /><ExportButton type="traffic" /></>}
       />
-      <KpiGrid>
-        <Kpi label="Visitors" value={num(c?.visitors)} current={c?.visitors} previous={p?.visitors} loading={ov.isLoading} />
-        <Kpi label="Sessions" value={num(c?.sessions)} current={c?.sessions} previous={p?.sessions} loading={ov.isLoading} hint={c ? `${c.pagesPerSession} pages / session` : null} />
-        <Kpi label="Page views" value={num(c?.pageviews)} current={c?.pageviews} previous={p?.pageviews} loading={ov.isLoading} />
-        <Kpi label="New visitors" value={num(c?.newVisitors)} current={c?.newVisitors} previous={p?.newVisitors} loading={ov.isLoading} />
-        <Kpi label="Returning visitors" value={num(c?.returningVisitors)} current={c?.returningVisitors} previous={p?.returningVisitors} loading={ov.isLoading} />
-        <Kpi label="Engagement rate" value={c ? pct(c.engagementRate) : null} current={c?.engagementRate} previous={p?.engagementRate} loading={ov.isLoading} hint={c ? `Bounce ${pct(c.bounceRate)}` : null} />
-        <Kpi label="Avg. session" value={c ? duration(c.avgSessionMs) : null} current={c?.avgSessionMs} previous={p?.avgSessionMs} loading={ov.isLoading} />
-        <Kpi label="Searches" value={num(c?.searches)} current={c?.searches} previous={p?.searches} loading={ov.isLoading} />
-        <Kpi label="Conversions" value={num(c?.conversions)} current={c?.conversions} previous={p?.conversions} loading={ov.isLoading} hint={c ? `${pct(c.conversionRate, 2)} of sessions` : null} />
-        <Kpi label="Leads" value={num(c?.leads)} current={c?.leads} previous={p?.leads} loading={ov.isLoading} />
-      </KpiGrid>
-
-      <Card className="mt-4 overflow-hidden">
-        <MultiTrendChart data={ts.data?.points} interval={ts.data?.interval} loading={ts.isLoading || ov.isLoading} defaultActive={['visitors', 'sessions', 'pageviews']}
-          metrics={METRICS.map((m) => ({ ...m, value: c ? num(c[m.key]) : null }))} />
+      <div className="relative -mt-1 mb-1 h-0.5 overflow-hidden rounded-full" aria-hidden>
+        {refreshing && <div className="ov-progress absolute inset-y-0 w-1/3 rounded-full bg-[#1a73e8]" />}
+      </div>
+      <style>{'@keyframes ov-progress{0%{left:-33%}100%{left:100%}}.ov-progress{animation:ov-progress 1.1s ease-in-out infinite}'}</style>
+      <Card className="mt-3 overflow-hidden">
+        <MultiTrendChart data={ts.data?.points} interval={ts.data?.interval} loading={ts.isLoading || ov.isLoading} refreshing={refreshing} defaultActive={['visitors', 'sessions', 'pageviews']}
+          metrics={METRICS.map((m) => ({ ...m, value: c ? num(c[m.key]) : null, hint: c ? tileHint(m.key, c) : null }))} />
       </Card>
 
       {site === 'all' && websites.length > 1 && <div className="mt-4"><ByWebsite /></div>}

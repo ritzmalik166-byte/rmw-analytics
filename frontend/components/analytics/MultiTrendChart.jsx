@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { cn, compact, num } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/feedback';
@@ -35,7 +35,7 @@ function ChartTooltip({ active, payload, label, metrics, interval }) {
  * Each line has its own (hidden) scale so small and large metrics are both readable.
  * metrics: [{ key, label, color, value, format? }]
  */
-export function MultiTrendChart({ data, interval = 'day', metrics, loading, height = 300, defaultActive }) {
+export function MultiTrendChart({ data, interval = 'day', metrics, loading, refreshing = false, height = 300, defaultActive }) {
   const [active, setActive] = useState(() => new Set(defaultActive || metrics.slice(0, 2).map((m) => m.key)));
   const toggle = (k) => setActive((s) => {
     const n = new Set(s);
@@ -45,7 +45,7 @@ export function MultiTrendChart({ data, interval = 'day', metrics, loading, heig
   const shown = metrics.filter((m) => active.has(m.key));
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
         {metrics.map((m) => {
           const on = active.has(m.key);
           return (
@@ -56,12 +56,20 @@ export function MultiTrendChart({ data, interval = 'day', metrics, loading, heig
                 <span className={cn('flex h-3.5 w-3.5 items-center justify-center rounded-sm border', on ? 'border-white bg-white/20' : 'border-slate-400')}>{on && <Check className="h-3 w-3" />}</span>
                 {m.label}
               </span>
-              {loading && m.value == null ? <Skeleton className={cn('mt-2 h-7 w-16', on && 'bg-white/30')} /> : <span className="mt-1 block text-[26px] font-normal leading-tight tabular-nums">{m.value ?? '—'}</span>}
+              {loading && m.value == null ? <Skeleton className={cn('mt-2 h-7 w-16', on && 'bg-white/30')} /> : <span className={cn('mt-1 block text-[26px] font-normal leading-tight tabular-nums transition-opacity', refreshing && 'opacity-50')}>{m.value ?? '—'}</span>}
+              {m.hint && <span className={cn('mt-0.5 block truncate text-[11px] leading-snug', on ? 'text-white/85' : 'text-slate-500')} title={m.hint}>{m.hint}</span>}
             </button>
           );
         })}
       </div>
-      <div className="px-2 pb-2 pt-4" style={{ height }}>
+      <div className="relative px-2 pb-2 pt-4" style={{ height }} aria-busy={refreshing}>
+        {refreshing && data && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px] transition-opacity">
+            <span className="flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 shadow-sm">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#1a73e8]" />Updating…
+            </span>
+          </div>
+        )}
         {loading && !data ? <Skeleton className="h-full w-full" /> : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data || []} margin={{ top: 6, right: 16, bottom: 0, left: 4 }}>
