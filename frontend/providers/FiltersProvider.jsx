@@ -12,6 +12,15 @@ const FiltersContext = createContext(null);
 const SITE_KEY = 'rmwa:site';
 
 export const RANGES = [
+  { key: '5m', label: 'Last 5 minutes' },
+  { key: '15m', label: 'Last 15 minutes' },
+  { key: '20m', label: 'Last 20 minutes' },
+  { key: '30m', label: 'Last 30 minutes' },
+  { key: '1h', label: 'Last 1 hour' },
+  { key: '3h', label: 'Last 3 hours' },
+  { key: '6h', label: 'Last 6 hours' },
+  { key: '12h', label: 'Last 12 hours' },
+  { key: '24h', label: 'Last 24 hours' },
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: '7d', label: 'Last 7 days' },
@@ -21,7 +30,20 @@ export const RANGES = [
   { key: '12m', label: 'Last 12 months' },
   { key: 'custom', label: 'Custom range' },
 ];
-const LEGACY_RANGES = { '24h': 'Last 24 hours' };
+
+const fmtDay = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDayTime = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+/** "2026-11-12" → "12 Nov 2026"; "2026-11-12T14:30" → "12 Nov 2026, 2:30 pm". */
+function fmtBound(v) {
+  if (!v) return '';
+  const hasTime = v.length > 10;
+  const d = new Date(hasTime ? v : `${v}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? v : (hasTime ? fmtDayTime : fmtDay).format(d);
+}
+/** Human label for a custom range, e.g. "12 Nov 2026, 2:30 pm → 12 Nov 2026, 4:00 pm". */
+export function customRangeLabel(from, to) {
+  return to && to !== from ? `${fmtBound(from)} → ${fmtBound(to)}` : fmtBound(from);
+}
 
 /**
  * Report filters, in plain words. `dim` is the breakdown that lists the possible values (see FilterBar).
@@ -105,7 +127,7 @@ export function FiltersProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsKey]);
   const current = websites.find((w) => w.id === site) || null;
-  const rangeLabel = range === 'custom' ? `${from} → ${to || from}` : RANGES.find((r) => r.key === range)?.label || LEGACY_RANGES[range] || range;
+  const rangeLabel = range === 'custom' ? customRangeLabel(from, to) : RANGES.find((r) => r.key === range)?.label || range;
 
   const value = useMemo(() => ({
     site, range, from, to, query, setSite, setRange, websites, websitesLoading, current, rangeLabel,

@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/feedback';
 
 const fmtDay = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' });
 const fmtHour = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hour12: true });
+const fmtMinute = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
 const fmtFull = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 const fmtFullHour = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
 const toDate = (t) => (t.length === 10 ? new Date(`${t}T00:00:00`) : new Date(t));
@@ -16,7 +17,7 @@ function ChartTooltip({ active, payload, label, metrics, interval }) {
   const d = toDate(label);
   return (
     <div className="rounded-md border bg-white px-3 py-2 text-xs shadow-lg">
-      <p className="mb-1.5 font-medium text-slate-700">{interval === 'hour' ? fmtFullHour.format(d) : fmtFull.format(d)}</p>
+      <p className="mb-1.5 font-medium text-slate-700">{interval === 'hour' || interval === 'minute' ? fmtFullHour.format(d) : fmtFull.format(d)}</p>
       {payload.map((p) => {
         const m = metrics.find((x) => x.key === p.dataKey);
         return (
@@ -75,7 +76,7 @@ export function MultiTrendChart({ data, interval = 'day', metrics, loading, refr
             <LineChart data={data || []} margin={{ top: 6, right: 16, bottom: 0, left: 4 }}>
               <CartesianGrid vertical={false} stroke="#e8eaed" />
               <XAxis dataKey="t" tickLine={false} axisLine={{ stroke: '#dadce0' }} tick={{ fontSize: 11, fill: '#5f6368' }} minTickGap={28}
-                tickFormatter={(t) => (interval === 'hour' ? fmtHour.format(toDate(t)) : fmtDay.format(toDate(t)))} />
+                tickFormatter={(t) => (interval === 'minute' ? fmtMinute.format(toDate(t)) : interval === 'hour' ? fmtHour.format(toDate(t)) : fmtDay.format(toDate(t)))} />
               {shown.map((m, i) => (
                 <YAxis key={m.key} yAxisId={m.key} hide={i > 0 || shown.length > 2} width={44} tickLine={false} axisLine={false}
                   tick={{ fontSize: 11, fill: m.color }} allowDecimals={false} tickFormatter={compact} />

@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/feedback';
 const NAVY = '#194173';
 const fmtDay = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' });
 const fmtHour = new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+const fmtMinute = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
 const fmtFull = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 const fmtFullHour = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -17,7 +18,7 @@ function ChartTooltip({ active, payload, label, metric, interval }) {
   const d = toDate(label);
   return (
     <div className="rounded-md border bg-white px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-medium text-slate-700">{interval === 'hour' ? fmtFullHour.format(d) : fmtFull.format(d)}</p>
+      <p className="mb-1 font-medium text-slate-700">{interval === 'hour' || interval === 'minute' ? fmtFullHour.format(d) : fmtFull.format(d)}</p>
       <p className="flex items-center gap-2 text-slate-700"><span className="h-2 w-2 rounded-sm" style={{ background: NAVY }} />{metric.label}<span className="ml-auto pl-4 font-semibold tabular-nums">{metric.format ? metric.format(payload[0].value) : num(payload[0].value)}</span></p>
     </div>
   );
@@ -54,7 +55,7 @@ export function TrendChart({ data, interval = 'day', metrics, loading, height = 
               </defs>
               <CartesianGrid vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="t" tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fontSize: 11, fill: '#64748b' }} minTickGap={24}
-                tickFormatter={(t) => (interval === 'hour' ? fmtHour.format(toDate(t)) : fmtDay.format(toDate(t)))} />
+                tickFormatter={(t) => (interval === 'minute' ? fmtMinute.format(toDate(t)) : interval === 'hour' ? fmtHour.format(toDate(t)) : fmtDay.format(toDate(t)))} />
               <YAxis width={44} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} tickFormatter={compact} />
               <Tooltip content={<ChartTooltip metric={metric} interval={interval} />} cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }} />
               <Area type="monotone" dataKey={metric.key} stroke={NAVY} strokeWidth={2} fill={`url(#fill-${metric.key})`} activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2 }} dot={false} isAnimationActive={false} />
