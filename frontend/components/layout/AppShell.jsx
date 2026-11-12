@@ -6,10 +6,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bell, LogOut, Menu, X, Loader2, LayoutDashboard, Radio, Users2, Timer, MapPin, MonitorSmartphone, Globe2, FileText, MousePointerClick,
   Search, Route, Flame, Share2, Megaphone, ClipboardList, Inbox, Filter, Server, BellRing, FileSpreadsheet, Settings, ChevronDown, Check, Building2, KeyRound,
-  Video,
+  Video, Link2, LogIn, LogOut as ExitIcon, Zap, Pointer, Download, Target, Percent, ChevronRight, Compass,
 } from 'lucide-react';
 import { useAuth } from '@/providers/AuthProvider';
-import { FiltersProvider, useFilters } from '@/providers/FiltersProvider';
+import { FiltersProvider, useFilters, withView } from '@/providers/FiltersProvider';
+import { FilterBar } from '@/components/analytics/FilterBar';
 import { api } from '@/lib/api';
 import { cn, timeAgo, toQuery } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -18,42 +19,67 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PageSkeleton, Skeleton } from '@/components/ui/feedback';
 import { WebsiteDot } from '@/components/analytics/WebsiteDot';
 
+/**
+ * Navigation follows the questions a website owner asks: who visits (Visitors), where from (Traffic),
+ * what they look at (Content), what they do (Engagement) and whether they convert (Conversions).
+ * Specialist tools stay one click away under "More tools" (collapsed).
+ */
 export const NAV = [
   { items: [
     { href: '/overview', label: 'Overview', icon: LayoutDashboard },
-    { href: '/realtime', label: 'Real-time', icon: Radio, live: true },
+    { href: '/explore', label: 'Explore', icon: Compass },
   ] },
-  { title: 'Audience', items: [
-    { href: '/visitors', label: 'Visitors', icon: Users2 },
+  { title: 'Visitors', items: [
+    { href: '/users', label: 'Users', icon: Users2 },
     { href: '/sessions', label: 'Sessions', icon: Timer },
-    { href: '/geography', label: 'Geography', icon: MapPin },
     { href: '/devices', label: 'Devices', icon: MonitorSmartphone },
-    { href: '/browsers', label: 'Browsers', icon: Globe2 },
   ] },
-  { title: 'Behaviour', items: [
-    { href: '/pages', label: 'Pages', icon: FileText },
-    { href: '/events', label: 'Events', icon: MousePointerClick },
-    { href: '/searches', label: 'Searches', icon: Search },
-    { href: '/journeys', label: 'User journeys', icon: Route },
-    { href: '/recordings', label: 'Recordings', icon: Video, perm: 'visitors:read' },
-    { href: '/heatmaps', label: 'Heatmaps', icon: Flame },
-  ] },
-  { title: 'Acquisition', items: [
-    { href: '/sources', label: 'Traffic sources', icon: Share2 },
+  { title: 'Traffic', items: [
+    { href: '/sources', label: 'Sources', icon: Share2 },
     { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
+    { href: '/referrals', label: 'Referrals', icon: Link2 },
   ] },
-  { title: 'Conversion', items: [
+  { title: 'Content', items: [
+    { href: '/pages', label: 'Pages', icon: FileText },
+    { href: '/landing-pages', label: 'Landing pages', icon: LogIn },
+    { href: '/exit-pages', label: 'Exit pages', icon: ExitIcon },
+  ] },
+  { title: 'Engagement', items: [
+    { href: '/events', label: 'Events', icon: Zap },
+    { href: '/clicks', label: 'Clicks', icon: Pointer },
     { href: '/forms', label: 'Forms', icon: ClipboardList },
+    { href: '/downloads', label: 'Downloads', icon: Download },
+  ] },
+  { title: 'Conversions', items: [
     { href: '/leads', label: 'Leads', icon: Inbox, perm: 'leads:read' },
+    { href: '/goals', label: 'Goals', icon: Target },
+    { href: '/conversions', label: 'Conversion rate', icon: Percent },
+  ] },
+  { items: [
+    { href: '/realtime', label: 'Realtime', icon: Radio, live: true },
+    { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
+  ] },
+  { title: 'More tools', collapsible: true, items: [
+    { href: '/searches', label: 'Site search', icon: Search },
+    { href: '/geography', label: 'Locations', icon: MapPin },
+    { href: '/browsers', label: 'Browsers', icon: Globe2 },
+    { href: '/journeys', label: 'User journeys', icon: Route },
     { href: '/funnels', label: 'Funnels', icon: Filter },
+    { href: '/heatmaps', label: 'Heatmaps', icon: Flame },
+    { href: '/recordings', label: 'Recordings', icon: Video, perm: 'visitors:read' },
+    { href: '/visitors', label: 'Visitor profiles', icon: MousePointerClick, perm: 'visitors:read' },
+    { href: '/alerts', label: 'Alerts', icon: BellRing },
   ] },
   { title: 'Manage', items: [
     { href: '/websites', label: 'Websites', icon: Server },
-    { href: '/alerts', label: 'Alerts', icon: BellRing },
-    { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
     { href: '/settings', label: 'Settings', icon: Settings },
   ] },
 ];
+
+/** Reports whose numbers respect the filter bar (device, country, source…). */
+const FILTERABLE = ['/overview', '/explore','/users', '/devices', '/sources', '/campaigns', '/referrals', '/pages', '/landing-pages', '/exit-pages', '/events', '/clicks', '/forms', '/downloads', '/conversions', '/geography', '/browsers', '/searches', '/journeys'];
+/** Pages that aren't tied to the selected website / dates, so links to them stay plain. */
+const PLAIN = ['/websites', '/settings', '/alerts'];
 
 /** Pages whose content doesn't depend on the website filter keep their own URL without ?site. */
 const isPlainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
@@ -161,22 +187,29 @@ function AlertBell() {
 function Shell({ children }) {
   const { me, can, switchOrg } = useAuth();
   const pathname = usePathname();
-  const { site } = useFilters();
+  const { linkQuery } = useFilters();
   const [open, setOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState(null);
-  useEffect(() => { setPendingHref(null); }, [pathname]);
-  // Keep the selected website when moving between sections.
-  const hrefFor = (href) => (site && site !== 'all' && !['/websites', '/settings', '/alerts'].includes(href) ? `${href}?site=${site}` : href);
+  const inMore = NAV.find((g) => g.collapsible)?.items.some((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
+  const [moreOpen, setMoreOpen] = useState(Boolean(inMore));
+  useEffect(() => { setPendingHref(null); if (inMore) setMoreOpen(true); }, [pathname, inMore]);
+  // Keep the selected website, dates and filters when moving between reports.
+  const hrefFor = (href) => (PLAIN.includes(href) ? href : withView(href, linkQuery));
   const navigate = (href) => (e) => { setOpen(false); if (isPlainClick(e) && href !== pathname) setPendingHref(href); };
+  const showFilters = FILTERABLE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   const sidebar = (
     <nav className="flex h-full flex-col bg-white">
       <div className="flex-1 overflow-y-auto py-2">
-        {NAV.map((group) => (
-          <div key={group.title || 'main'} className="mb-1">
-            {group.title && <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>}
-            <ul>
+        {NAV.map((group, gi) => (
+          <div key={group.title || `g${gi}`} className={cn('mb-1', !group.title && gi > 0 && 'mt-2 border-t pt-1')}>
+            {group.title && (group.collapsible ? (
+              <button onClick={() => setMoreOpen((v) => !v)} className="flex w-full items-center gap-1 px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 hover:text-slate-700" aria-expanded={moreOpen}>
+                <ChevronRight className={cn('h-3 w-3 transition-transform', moreOpen && 'rotate-90')} />{group.title}
+              </button>
+            ) : <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>)}
+            <ul hidden={group.collapsible && !moreOpen}>
               {group.items.filter((i) => !i.perm || can(i.perm)).map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
@@ -264,7 +297,10 @@ function Shell({ children }) {
         </div>
       )}
       <div className="lg:pl-56">
-        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">{pendingHref ? (pendingHref.startsWith('/overview') ? <DashboardSkeleton /> : <PageSkeleton />) : children}</main>
+        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">
+          {showFilters && !pendingHref && <FilterBar />}
+          {pendingHref ? (pendingHref.startsWith('/overview') ? <DashboardSkeleton /> : <PageSkeleton />) : children}
+        </main>
       </div>
       <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </div>

@@ -6,7 +6,8 @@ import { useFilters } from '@/providers/FiltersProvider';
 import { PageHeader, TableSkeleton, EmptyState, ErrorState } from '@/components/ui/feedback';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Kpi, KpiGrid } from '@/components/analytics/Kpi';
+import { Stat, StatGrid } from '@/components/analytics/Simple';
+import { HELP } from '@/lib/labels';
 import { RangePicker } from '@/components/analytics/RangePicker';
 import { WebsiteTag } from '@/components/analytics/WebsiteDot';
 
@@ -29,19 +30,21 @@ export default function FormsPage() {
   return (
     <>
       <PageHeader title="Forms" description={`Form views, starts, submissions, errors and abandonment · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
-      <KpiGrid>
-        <Kpi label="Form views" value={num(t.views)} loading={isLoading} />
-        <Kpi label="Started" value={num(t.starts)} loading={isLoading} hint={t.views ? `${pct((t.starts / t.views) * 100)} of views` : null} />
-        <Kpi label="Submitted" value={num(t.submits)} loading={isLoading} hint={t.starts ? `${pct((t.submits / t.starts) * 100)} completion` : null} />
-        <Kpi label="Validation errors" value={num(t.errors)} loading={isLoading} />
-        <Kpi label="Leads captured" value={num(t.leads)} loading={isLoading} />
-      </KpiGrid>
+      <StatGrid className="xl:grid-cols-6">
+        <Stat size="sm" label="Views" current={t.views} loading={isLoading} help="Times a form came into view on screen." />
+        <Stat size="sm" label="Started" current={t.starts} loading={isLoading} help="Times someone clicked into a form field." />
+        <Stat size="sm" label="Submitted" current={t.submits} loading={isLoading} help="Times a form was sent." />
+        <Stat size="sm" label="Failed" current={t.errors} loading={isLoading} help={HELP.failed} />
+        <Stat size="sm" label="Abandoned" current={Math.max(0, t.starts - t.submits)} loading={isLoading} help={HELP.abandoned} />
+        <Stat size="sm" label="Conversion rate" value={t.views ? pct((t.submits / t.views) * 100) : '—'} loading={isLoading} help={HELP.formConversion} />
+      </StatGrid>
+      <p className="mt-2 text-[12px] text-muted-foreground">Forms are detected automatically. Field values are never read or stored; only that a form was seen, started and sent. {t.leads ? `${num(t.leads)} leads were captured from forms you enabled for lead capture.` : ''}</p>
       <Card className="mt-4 overflow-hidden">
         {error ? <ErrorState error={error} onRetry={refetch} /> : isLoading && !data ? <TableSkeleton rows={6} cols={8} /> : !data?.length ? (
           <EmptyState icon={ClipboardList} title="No form activity" description="Forms are tracked automatically (views, starts, submits, errors) without reading any values. Add data-analytics-lead to a form to capture allowlisted fields as leads." />
         ) : (
           <Table>
-            <TableHeader><TableRow><TableHead>Form</TableHead><TableHead>Website</TableHead><TableHead>Funnel</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="text-right">Starts</TableHead><TableHead className="text-right">Submits</TableHead><TableHead className="text-right">Completion</TableHead><TableHead className="text-right">Abandoned</TableHead><TableHead className="text-right">Errors</TableHead><TableHead className="text-right">Avg. fill time</TableHead><TableHead className="text-right">Leads</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Form</TableHead><TableHead>Website</TableHead><TableHead>Funnel</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="text-right">Started</TableHead><TableHead className="text-right">Submitted</TableHead><TableHead className="text-right">Conversion rate</TableHead><TableHead className="text-right">Abandoned</TableHead><TableHead className="text-right">Failed</TableHead><TableHead className="text-right">Avg. fill time</TableHead><TableHead className="text-right">Leads</TableHead></TableRow></TableHeader>
             <TableBody>
               {data.map((f) => (
                 <TableRow key={`${f.websiteId}-${f.formKey}`}>
@@ -51,7 +54,7 @@ export default function FormsPage() {
                   <TableCell className="text-right tabular-nums">{num(f.views)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(f.starts)}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">{num(f.submits)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{pct(f.completionRate)}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium" title={`${pct(f.completionRate)} of people who started it sent it`}>{pct(f.conversionRate)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(f.abandonment)}</TableCell>
                   <TableCell className="text-right tabular-nums">{f.errors ? <span className="text-red-700">{num(f.errors)}</span> : 0}</TableCell>
                   <TableCell className="text-right tabular-nums">{duration(f.avgCompletionMs)}</TableCell>

@@ -6,11 +6,12 @@ import { Select, Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/label';
+import { Switch } from '@/components/ui/controls';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function RangePicker({ allow }) {
-  const { range, from, to, setRange } = useFilters();
+export function RangePicker({ allow, showCompare = false }) {
+  const { range, from, to, setRange, compare, setCompare } = useFilters();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ from: from || today(), to: to || today() });
   const options = allow ? RANGES.filter((r) => allow.includes(r.key)) : RANGES;
@@ -26,6 +27,12 @@ export function RangePicker({ allow }) {
         >
           {options.map((r) => <option key={r.key} value={r.key}>{r.key === 'custom' && range === 'custom' ? `${from} → ${to || from}` : r.label}</option>)}
         </Select>
+        {showCompare && (
+          <label className="ml-1 flex cursor-pointer select-none items-center gap-1.5 whitespace-nowrap text-[12px] text-slate-600" title="Show each number next to the same-length period just before">
+            <Switch checked={compare} onCheckedChange={setCompare} aria-label="Compare with previous period" />
+            Compare with previous period
+          </label>
+        )}
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">

@@ -95,8 +95,8 @@ export default function RealtimePage() {
       />
       <div className="grid gap-4 lg:grid-cols-4">
         <Card className="flex flex-col justify-center border-l-[3px] border-l-[hsl(var(--primary))] px-4 py-4 lg:col-span-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Active visitors</p>
-          <p className="mt-1 flex items-center gap-2 text-4xl font-semibold tabular-nums text-slate-900"><span className={cn('h-3 w-3 rounded-full', rt.active ? 'animate-pulse bg-emerald-500' : 'bg-slate-300')} />{rt.active}</p>
+          <p className="flex items-center gap-2 text-4xl font-semibold tabular-nums text-slate-900"><span className={cn('h-3 w-3 rounded-full', rt.active ? 'animate-pulse bg-red-500' : 'bg-slate-300')} />{rt.active}</p>
+          <p className="mt-1 text-[14px] font-medium text-slate-700">{rt.active === 1 ? 'person is' : 'people are'} on your website right now</p>
           <p className="mt-1 text-xs text-muted-foreground">{pv30.toLocaleString('en-IN')} page views in the last 30 minutes</p>
         </Card>
         <Card className="overflow-hidden lg:col-span-3">

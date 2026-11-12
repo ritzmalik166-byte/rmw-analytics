@@ -10,14 +10,32 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { RangePicker } from '@/components/analytics/RangePicker';
 import { Panel } from '@/components/analytics/Panel';
 import { BarList } from '@/components/analytics/BarList';
+import { Stat, StatGrid } from '@/components/analytics/Simple';
+import { MarkConversionButton } from '@/components/analytics/MarkConversion';
+import { EVENT_NAMES } from '@rmw-analytics/shared/events';
 
-const AUTO = new Set(['session_start', 'page_view', 'route_change', 'page_leave', 'click', 'scroll', 'outbound_click', 'file_download', 'video_play', 'video_pause', 'video_complete', 'form_view', 'form_start', 'form_submit', 'form_error', 'search', 'js_error', 'rage_click', 'dead_click', 'visibility_hidden', 'identify', 'lead', 'conversion']);
+/** Background events that make no sense as conversions. */
+const NOT_CONVERTIBLE = new Set(['session_start', 'page_view', 'route_change', 'page_leave', 'scroll', 'visibility_hidden', 'js_error', 'rage_click', 'dead_click', 'conversion', 'identify']);
+
+const AUTO = new Set(EVENT_NAMES);
 
 function EventDetail({ name }) {
   const { data, isLoading, error, refetch } = useStats(`/stats/events/${encodeURIComponent(name)}`);
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-[16px] font-semibold">{data?.label || name}</h2>
+          <p className="font-mono text-[11px] text-muted-foreground">{name}{!AUTO.has(name) && ' · custom event'}</p>
+        </div>
+        {!NOT_CONVERTIBLE.has(name) && <MarkConversionButton event={name} label={data?.label && data.label !== name ? data.label : name} />}
+      </div>
+      <StatGrid className="grid-cols-3 md:grid-cols-3">
+        <Stat size="sm" label="Times it happened" current={data?.count} loading={isLoading && !data} />
+        <Stat size="sm" label="People" current={data?.visitors} loading={isLoading && !data} help="Different visitors who did this at least once." />
+        <Stat size="sm" label="Per person" value={data ? String(data.perVisitor) : undefined} loading={isLoading && !data} help="Average times each of those people did it." />
+      </StatGrid>
       <Card className="overflow-hidden">
         <div className="border-b bg-[hsl(214_25%_97%)] px-3 py-2"><h3 className="text-[12px] font-semibold uppercase tracking-wide text-slate-600">{data?.label || name} · per day</h3></div>
         <div className="h-[180px] px-2 pt-2">
@@ -57,7 +75,7 @@ export default function EventsPage() {
   const sel = selected || rows[0]?.value;
   return (
     <>
-      <PageHeader title="Events" description={`Automatic and custom events · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
+      <PageHeader title="Events" description={`Everything visitors did: tracked automatically, plus your own analytics.track() events · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<RangePicker />} />
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="overflow-hidden lg:col-span-2">
           <div className="flex items-center justify-between border-b bg-[hsl(214_25%_97%)] px-3 py-1.5">
@@ -66,7 +84,7 @@ export default function EventsPage() {
           </div>
           {error ? <ErrorState error={error} onRetry={refetch} /> : isLoading && !data ? <TableSkeleton rows={10} cols={3} /> : !rows.length ? <EmptyState title="No events in this period" description="Use analytics.track('event_name', {…}) for custom events." /> : (
             <Table>
-              <TableHeader><TableRow><TableHead>Event</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Visitors</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Event</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">People</TableHead></TableRow></TableHeader>
               <TableBody>
                 {rows.map((r) => (
                   <TableRow key={r.value} data-state={r.value === sel ? 'selected' : undefined} className="cursor-pointer" onClick={() => setSelected(r.value)}>
