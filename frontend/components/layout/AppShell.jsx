@@ -77,7 +77,8 @@ export const NAV = [
 ];
 
 /** Reports whose numbers respect the filter bar (device, country, source…). */
-const FILTERABLE = ['/overview', '/explore','/users', '/devices', '/sources', '/campaigns', '/referrals', '/pages', '/landing-pages', '/exit-pages', '/events', '/clicks', '/forms', '/downloads', '/conversions', '/geography', '/browsers', '/searches', '/journeys'];
+// Explorations are left out: they carry their own segments and dates.
+const FILTERABLE = ['/overview', '/users', '/devices', '/sources', '/campaigns', '/referrals', '/pages', '/landing-pages', '/exit-pages', '/events', '/clicks', '/forms', '/downloads', '/conversions', '/geography', '/browsers', '/searches', '/journeys'];
 /** Pages that aren't tied to the selected website / dates, so links to them stay plain. */
 const PLAIN = ['/websites', '/settings', '/alerts'];
 

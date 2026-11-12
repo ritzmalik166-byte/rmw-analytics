@@ -1,394 +1,191 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Table2, BarChart3, PieChart as PieIcon, LineChart as LineIcon, Download, Link2, Save, Trash2, LayoutTemplate, Filter, Route, Info } from 'lucide-react';
-import { EVENT_LABELS } from '@rmw-analytics/shared/events';
-import { api } from '@/lib/api';
-import { useStats } from '@/lib/hooks';
-import { cn, num, pct, duration, countryName, flag, titleCase, copyText } from '@/lib/utils';
-import { channelLabel } from '@/lib/labels';
-import { useFilters, withView } from '@/providers/FiltersProvider';
-import { PageHeader, ErrorState, Skeleton, EmptyState } from '@/components/ui/feedback';
+import { MoreVertical, Plus, Search, Table2, Filter, Route, LayoutTemplate, Copy, Pencil, Trash2, ExternalLink, ChevronDown } from 'lucide-react';
+import { api, apiMessage } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { useFilters } from '@/providers/FiltersProvider';
+import { PageHeader, EmptyState, TableSkeleton } from '@/components/ui/feedback';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/controls';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { RangePicker } from '@/components/analytics/RangePicker';
-import { Delta } from '@/components/analytics/Simple';
+import { TECHNIQUES, TEMPLATES, lastModified } from '@/components/explore/shared';
 
-/**
- * Explore: GA4-style free-form exploration in one place. Pick up to 2 dimensions (rows, break down by),
- * any compatible metrics and a visualisation; filters and dates come from the bar at the top.
- * The whole exploration lives in the URL (shareable); "Save" keeps named explorations in this browser.
- */
+const TYPE_ICON = { freeform: Table2, funnel: Filter, path: Route };
 
-const TEMPLATES = [
-  { name: 'Traffic by day', hint: 'Users, sessions and views each day', dims: ['date'], metrics: ['activeUsers', 'sessions', 'pageviews', 'conversions'], viz: 'line' },
-  { name: 'Where visitors come from', hint: 'Traffic type and source, with results', dims: ['channel', 'source'], metrics: ['users', 'sessions', 'engagementRate', 'conversionRate'], viz: 'table' },
-  { name: 'Most viewed pages', hint: 'Views and viewers per page', dims: ['pagePath'], metrics: ['views', 'viewers'], viz: 'bar' },
-  { name: 'Landing pages that convert', hint: 'First page of a visit and its results', dims: ['landingPage'], metrics: ['sessions', 'bounceRate', 'conversions', 'conversionRate'], viz: 'table' },
-  { name: 'Users by country & device', hint: 'Where people are and what they use', dims: ['country', 'device'], metrics: ['users', 'newUsers', 'avgEngagementTime'], viz: 'table' },
-  { name: 'What people do', hint: 'Every action, how often and by how many', dims: ['eventName'], metrics: ['eventCount', 'eventUsers', 'eventsPerUser'], viz: 'bar' },
-  { name: 'Device split', hint: 'Mobile vs desktop vs tablet', dims: ['device'], metrics: ['users'], viz: 'donut' },
-  { name: 'Campaign performance', hint: 'UTM campaigns and their results', dims: ['campaign', 'medium'], metrics: ['sessions', 'engagementRate', 'conversions', 'conversionRate'], viz: 'table' },
-  { name: 'New vs returning', hint: 'How first-time visitors behave', dims: ['userType'], metrics: ['users', 'sessions', 'pagesPerSession', 'conversionRate'], viz: 'table' },
-];
-const VIZ = [
-  { key: 'table', label: 'Table', icon: Table2 },
-  { key: 'bar', label: 'Bar chart', icon: BarChart3 },
-  { key: 'donut', label: 'Donut', icon: PieIcon },
-  { key: 'line', label: 'Line over time', icon: LineIcon },
-];
-const COLORS = ['#1a73e8', '#f9ab00', '#d93025', '#188038', '#7b1fa2', '#12b5cb', '#e8710a', '#5f6368'];
-const SAVED_KEY = 'rmwa:explorations';
-const fmtDay = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' });
-/** Explore dimension → report filter it can drill into. */
-const DRILL = { device: 'device', country: 'country', channel: 'channel', source: 'source', medium: 'medium', campaign: 'campaign', pagePath: 'page', eventName: 'event' };
-
-function formatMetric(m, v) {
-  if (v == null) return '—';
-  switch (m.format) {
-    case 'percent': return pct(v, 1);
-    case 'duration': return duration(v);
-    case 'decimal': return Number(v).toFixed(2);
-    default: return num(v);
+/** Little drawings for the "Start a new exploration" cards (same idea as GA's thumbnails). */
+function Thumb({ kind }) {
+  if (kind === 'blank') {
+    return <div className="flex h-full items-center justify-center"><span className="relative block h-12 w-12"><span className="absolute left-[21px] top-0 h-12 w-[6px] rounded bg-[#ea4335]" /><span className="absolute left-0 top-[21px] h-[6px] w-12 rounded bg-[#4285f4]" /><span className="absolute left-[21px] top-[27px] h-[21px] w-[6px] rounded-b bg-[#34a853]" /><span className="absolute left-[27px] top-[21px] h-[6px] w-[21px] rounded-r bg-[#fbbc04]" /></span></div>;
   }
-}
-function formatDim(d, v) {
-  if (v == null || v === '(unknown)') return v === '(unknown)' ? 'Unknown' : '—';
-  switch (d) {
-    case 'channel': return channelLabel(v);
-    case 'country': return `${flag(v)} ${countryName(v)}`;
-    case 'device': return titleCase(v);
-    case 'eventName': return EVENT_LABELS[v] ? `${EVENT_LABELS[v]}` : v;
-    case 'date': return fmtDay.format(new Date(`${v}T00:00:00`));
-    case 'pagePath': case 'landingPage': case 'exitPage': return v === '/' ? 'Homepage (/)' : v;
-    default: return v;
+  if (kind === 'freeform') {
+    return (
+      <div className="grid h-full grid-cols-4 gap-1 p-4">
+        {Array.from({ length: 24 }).map((_, i) => <span key={i} className={cn('rounded-sm', i % 4 === 0 ? 'bg-slate-200' : 'bg-[#aecbfa]')} style={{ opacity: i % 4 === 0 ? 1 : 0.35 + ((i * 37) % 60) / 100 }} />)}
+      </div>
+    );
   }
-}
-const sumable = (m) => m.format === 'number';
-
-function loadSaved() { try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); } catch { return []; } }
-function storeSaved(list) { try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch { /* private mode */ } }
-
-/** Exploration state in the URL: dims, metrics, viz, sort, order. */
-function useExploreState() {
-  const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const get = (k, d) => params.get(k) ?? d;
-  const state = {
-    dims: get('dims', 'channel').split(',').filter(Boolean),
-    metrics: get('metrics', 'users,sessions,engagementRate,conversionRate').split(',').filter(Boolean),
-    viz: get('viz', 'table'),
-    sort: params.get('sort') || undefined,
-    order: get('order', 'desc'),
-  };
-  const set = (patch) => {
-    const sp = new URLSearchParams(params.toString());
-    Object.entries(patch).forEach(([k, v]) => { const s = Array.isArray(v) ? v.join(',') : v; if (s) sp.set(k, s); else sp.delete(k); });
-    router.replace(`${pathname}?${sp}`, { scroll: false });
-  };
-  return [state, set];
-}
-
-function Section({ title, children, action }) {
+  if (kind === 'funnel') {
+    return <div className="flex h-full items-end gap-2 px-6 pb-5 pt-4">{[100, 78, 56, 40, 28, 16].map((h) => <span key={h} className="flex-1 rounded-t bg-[#8ab4f8]" style={{ height: `${h}%` }} />)}</div>;
+  }
   return (
-    <div className="border-b px-3 py-3 last:border-0">
-      <div className="mb-2 flex items-center justify-between"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>{action}</div>
-      {children}
-    </div>
+    <svg viewBox="0 0 200 110" className="h-full w-full p-3" aria-hidden>
+      <rect x="10" y="8" width="8" height="94" fill="#8ab4f8" /><rect x="90" y="8" width="8" height="70" fill="#8ab4f8" /><rect x="90" y="84" width="8" height="18" fill="#8ab4f8" />
+      <rect x="170" y="8" width="8" height="30" fill="#8ab4f8" /><rect x="170" y="44" width="8" height="22" fill="#8ab4f8" /><rect x="170" y="72" width="8" height="10" fill="#8ab4f8" />
+      <path d="M18 8 C55 8 55 8 90 8 L90 78 C55 78 55 94 18 94 Z" fill="#d2e3fc" /><path d="M18 94 C55 94 55 84 90 84 L90 102 C55 102 55 102 18 102 Z" fill="#e8f0fe" />
+      <path d="M98 8 C135 8 135 8 170 8 L170 38 C135 38 135 30 98 30 Z" fill="#d2e3fc" /><path d="M98 30 C135 30 135 44 170 44 L170 66 C135 66 135 54 98 54 Z" fill="#e8f0fe" /><path d="M98 54 C135 54 135 72 170 72 L170 82 C135 82 135 78 98 78 Z" fill="#f1f6fe" />
+    </svg>
   );
 }
 
-function Chart({ data, viz, dims, metrics }) {
-  const m0 = data.metrics[0];
-  const label = (r) => r.dims.map((v, i) => formatDim(dims[i], v)).join(' · ') || 'Total';
-  if (viz === 'line') {
-    if (dims[0] !== 'date') return <p className="px-4 py-16 text-center text-[13px] text-muted-foreground">A line over time needs <b>Date</b> as the first dimension. Pick it under Rows, or choose another chart.</p>;
-    // With a breakdown: one line per top value of the second dimension for the first metric. Otherwise: one line per metric.
-    let series; let points;
-    if (dims[1]) {
-      const totals = new Map();
-      data.rows.forEach((r) => totals.set(r.dims[1], (totals.get(r.dims[1]) || 0) + (r.metrics[m0.key] || 0)));
-      const top = [...totals].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k]) => k);
-      const byDate = new Map();
-      data.rows.forEach((r) => { if (!top.includes(r.dims[1])) return; const p = byDate.get(r.dims[0]) || { t: r.dims[0] }; p[r.dims[1]] = r.metrics[m0.key]; byDate.set(r.dims[0], p); });
-      points = [...byDate.values()].sort((a, b) => a.t.localeCompare(b.t));
-      series = top.map((k, i) => ({ key: k, name: formatDim(dims[1], k), color: COLORS[i % COLORS.length], metric: m0 }));
-    } else {
-      points = data.rows.map((r) => ({ t: r.dims[0], ...r.metrics })).sort((a, b) => a.t.localeCompare(b.t));
-      series = data.metrics.slice(0, 5).map((m, i) => ({ key: m.key, name: m.label, color: COLORS[i], metric: m, axis: i === 0 ? 'l' : 'r' }));
-    }
-    return (
-      <div className="h-[320px] px-2 pt-3">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-            <CartesianGrid vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="t" tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} minTickGap={24} tickFormatter={(t) => fmtDay.format(new Date(`${t}T00:00:00`))} />
-            <YAxis yAxisId="l" width={44} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-            {!dims[1] && series.length > 1 && <YAxis yAxisId="r" orientation="right" width={44} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />}
-            <Tooltip labelFormatter={(t) => fmtDay.format(new Date(`${t}T00:00:00`))} formatter={(v, n, item) => [formatMetric(series.find((s) => s.key === item.dataKey)?.metric || m0, v), n]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            {series.map((s) => <Line key={s.key} yAxisId={dims[1] || s.axis !== 'r' || series.length === 1 ? 'l' : 'r'} type="linear" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={2} dot={false} isAnimationActive={false} />)}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  }
-  const top = data.rows.slice(0, viz === 'donut' ? 7 : 12);
-  if (viz === 'donut') {
-    if (!sumable(m0)) return <p className="px-4 py-16 text-center text-[13px] text-muted-foreground">A donut shows shares of a total, which doesn't work for <b>{m0.label}</b>. Put a count (users, sessions, views…) first, or use a bar chart.</p>;
-    const rest = data.rows.slice(7).reduce((s, r) => s + (r.metrics[m0.key] || 0), 0);
-    const pie = [...top.map((r) => ({ name: label(r), value: r.metrics[m0.key] || 0 })), ...(rest ? [{ name: 'Other', value: rest }] : [])];
-    const total = pie.reduce((s, p) => s + p.value, 0);
-    return (
-      <div className="grid items-center gap-4 p-4 md:grid-cols-2">
-        <div className="h-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={pie} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={1} isAnimationActive={false}>
-                {pie.map((p, i) => <Cell key={p.name} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v, n) => [`${formatMetric(m0, v)} (${pct((v / total) * 100)})`, n]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <ul className="space-y-1.5 text-[13px]">
-          {pie.map((p, i) => <li key={p.name} className="flex items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: COLORS[i % COLORS.length] }} /><span className="min-w-0 flex-1 truncate">{p.name}</span><span className="tabular-nums text-muted-foreground">{formatMetric(m0, p.value)}</span><span className="w-12 text-right font-semibold tabular-nums">{pct((p.value / total) * 100, 0)}</span></li>)}
-        </ul>
-      </div>
-    );
-  }
-  if (viz === 'bar') {
-    const bars = top.map((r) => ({ name: label(r), value: r.metrics[m0.key] || 0 }));
-    return (
-      <div className="px-2 pt-3" style={{ height: Math.max(180, bars.length * 30 + 40) }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={bars} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }}>
-            <CartesianGrid horizontal={false} stroke="#e2e8f0" />
-            <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-            <YAxis type="category" dataKey="name" width={180} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#334155' }} tickFormatter={(v) => (v.length > 28 ? `${v.slice(0, 27)}…` : v)} />
-            <Tooltip formatter={(v) => [formatMetric(m0, v), m0.label]} contentStyle={{ fontSize: 12, borderRadius: 6 }} cursor={{ fill: 'rgba(25,65,115,0.06)' }} />
-            <Bar dataKey="value" fill="#194173" radius={[0, 3, 3, 0]} isAnimationActive={false} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  }
-  return null;
+function RenameDialog({ target, onClose }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(target?.name || '');
+  const save = useMutation({
+    mutationFn: () => api(`/explorations/${target.id}`, { method: 'PATCH', body: { name: name.trim() } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['explorations'] }); onClose(); },
+    onError: (e) => toast.error(apiMessage(e)),
+  });
+  return (
+    <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Rename exploration</DialogTitle></DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) save.mutate(); }}>
+          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
+          <DialogFooter className="mt-4"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" loading={save.isPending} disabled={!name.trim()}>Save</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-export default function ExplorePage() {
-  const { current, rangeLabel, compare, setFilter, linkQuery, query } = useFilters();
-  const [st, set] = useExploreState();
-  const [saved, setSaved] = useState([]);
-  const [saveName, setSaveName] = useState('');
-  useEffect(() => { setSaved(loadSaved()); }, []);
-  const { data: cat } = useQuery({ queryKey: ['explore-catalog'], queryFn: () => api('/stats/explore/catalog'), staleTime: Infinity });
-  const dimDef = useMemo(() => Object.fromEntries((cat?.dimensions || []).map((d) => [d.key, d])), [cat]);
-  const metDef = useMemo(() => Object.fromEntries((cat?.metrics || []).map((m) => [m.key, m])), [cat]);
-  const res = useStats('/stats/explore', { dims: st.dims.join(','), metrics: st.metrics.join(','), sort: st.sort, order: st.order, compare: compare ? '1' : undefined, limit: 500 }, { enabled: st.metrics.length > 0, retry: false });
-  const data = res.data;
+function DeleteDialog({ target, onClose }) {
+  const qc = useQueryClient();
+  const del = useMutation({
+    mutationFn: () => api(`/explorations/${target.id}`, { method: 'DELETE' }),
+    onSuccess: () => { toast.success('Exploration deleted'); qc.invalidateQueries({ queryKey: ['explorations'] }); onClose(); },
+    onError: (e) => toast.error(apiMessage(e)),
+  });
+  return (
+    <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Delete “{target?.name}”?</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">This removes the exploration for everyone in your organisation. Your analytics data is not affected.</p>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button variant="destructive" loading={del.isPending} onClick={() => del.mutate()}>Delete</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  // The engine follows the chosen metrics; dimensions and metrics of the other engine are disabled with a reason.
-  const engine = st.metrics.length ? metDef[st.metrics[0]]?.engine : null;
-  const dimOk = (k) => !engine || dimDef[k]?.engines.includes(engine);
-  const metOk = (k) => !engine || metDef[k]?.engine === engine;
-  const toggleMetric = (k) => {
-    const has = st.metrics.includes(k);
-    const next = has ? st.metrics.filter((x) => x !== k) : [...st.metrics.filter((x) => metDef[x]?.engine === metDef[k]?.engine), k].slice(0, 8);
-    // Switching engines drops dimensions the new engine can't use.
-    const eng = metDef[next[0]]?.engine;
-    set({ metrics: next, dims: st.dims.filter((d) => !eng || dimDef[d]?.engines.includes(eng)), sort: null });
-  };
-  const setDim = (i, v) => { const d = [...st.dims]; if (v) d[i] = v; else d.splice(i, 1); set({ dims: [...new Set(d.filter(Boolean))], sort: null }); };
-  const applyTemplate = (t) => set({ dims: t.dims, metrics: t.metrics, viz: t.viz, sort: null, order: null });
-  const sortBy = (k) => set({ sort: k, order: st.sort === k && st.order === 'desc' ? 'asc' : 'desc' });
+export default function ExplorationsPage() {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { site, websites } = useFilters();
+  const [q, setQ] = useState('');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [gallery, setGallery] = useState(false);
+  const [renaming, setRenaming] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const { data, isLoading } = useQuery({ queryKey: ['explorations'], queryFn: () => api('/explorations') });
+  const duplicate = useMutation({
+    mutationFn: (id) => api(`/explorations/${id}/duplicate`, { method: 'POST' }),
+    onSuccess: (d) => { qc.invalidateQueries({ queryKey: ['explorations'] }); toast.success('Duplicated', { action: { label: 'Open', onClick: () => router.push(`/explore/${d.id}`) } }); },
+    onError: (e) => toast.error(apiMessage(e)),
+  });
+  const rows = useMemo(() => (data || [])
+    .filter((e) => !q.trim() || e.name.toLowerCase().includes(q.trim().toLowerCase()) || e.owner.name.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => (sortDesc ? 1 : -1) * (new Date(b.updatedAt) - new Date(a.updatedAt))), [data, q, sortDesc]);
+  const siteName = (s) => (s === 'all' ? 'All websites' : websites.find((w) => w.id === s)?.name || 'Removed website');
+  const start = (kind, template) => router.push(`/explore/new?technique=${kind}${template != null ? `&template=${template}` : ''}${site && site !== 'all' ? `&site=${site}` : ''}`);
 
-  const saveCurrent = () => {
-    const name = saveName.trim() || `${st.dims.map((d) => dimDef[d]?.label).join(' × ') || 'Totals'}`;
-    const next = [{ name, dims: st.dims, metrics: st.metrics, viz: st.viz, savedAt: Date.now() }, ...saved.filter((s) => s.name !== name)].slice(0, 30);
-    setSaved(next); storeSaved(next); setSaveName(''); toast.success(`Saved "${name}" in this browser`);
-  };
-  const removeSaved = (name) => { const next = saved.filter((s) => s.name !== name); setSaved(next); storeSaved(next); };
-  const downloadCsv = () => {
-    if (!data) return;
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = [...data.dimensions.map((d) => d.label), ...data.metrics.map((m) => m.label)];
-    const lines = [head, ...data.rows.map((r) => [...r.dims, ...data.metrics.map((m) => r.metrics[m.key])]), ['Total', ...data.dimensions.slice(1).map(() => ''), ...data.metrics.map((m) => data.total[m.key])]];
-    const blob = new Blob([lines.map((l) => l.map(esc).join(',')).join('\n')], { type: 'text/csv' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `exploration-${query.range || 'custom'}.csv` });
-    document.body.appendChild(a); a.click(); a.remove();
-  };
-  const copyLink = async () => { (await copyText(window.location.href)) ? toast.success('Link copied. It opens this exact exploration.') : toast.error('Copy failed'); };
-
-  const groups = [
-    { title: 'Visits', items: (cat?.metrics || []).filter((m) => m.engine === 'sessions') },
-    { title: 'Actions', items: (cat?.metrics || []).filter((m) => m.engine === 'events') },
+  const cards = [
+    { kind: 'blank', title: 'Blank', hint: 'Create a new exploration' },
+    { kind: 'freeform', title: 'Free-form', hint: 'What insights can you uncover with custom charts and tables?' },
+    { kind: 'funnel', title: 'Funnel exploration', hint: 'How many visitors complete each step, and where do they drop off?' },
+    { kind: 'path', title: 'Path exploration', hint: 'What do visitors do step by step on your website?' },
   ];
-  const dimOptions = (cat?.dimensions || []);
 
   return (
     <>
-      <PageHeader
-        title="Explore"
-        description={`Build any report in one place: choose what to break down by and what to count · ${current ? current.name : 'All websites'} · ${rangeLabel}`}
-        actions={<><RangePicker showCompare /><Button size="sm" variant="outline" onClick={copyLink}><Link2 />Copy link</Button><Button size="sm" variant="outline" onClick={downloadCsv} disabled={!data?.rows?.length}><Download />CSV</Button></>}
-      />
-      <div className="mb-3 flex flex-wrap gap-1 text-[12px]">
-        <span className="rounded-full bg-[hsl(var(--primary))] px-3 py-1 font-medium text-white">Free-form</span>
-        <Link href={withView('/funnels', linkQuery)} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"><Filter className="h-3 w-3" />Funnel</Link>
-        <Link href={withView('/journeys', linkQuery)} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"><Route className="h-3 w-3" />Path</Link>
+      <PageHeader title="Explorations" description="Build your own reports: tables, funnels and visitor paths, saved for your whole team" />
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-[15px] font-medium text-slate-800">Start a new exploration</h2>
+        <button onClick={() => setGallery((v) => !v)} className="inline-flex items-center gap-1 text-[13px] font-medium text-[hsl(var(--primary))] hover:underline">Template gallery<ChevronDown className={cn('h-4 w-4 transition-transform', gallery && 'rotate-180')} /></button>
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-        {/* ── Variables & settings ── */}
-        <Card className="h-fit overflow-hidden lg:sticky lg:top-16">
-          <Section title="Start from a template">
-            <div className="max-h-48 space-y-0.5 overflow-y-auto pr-1">
-              {TEMPLATES.map((t) => (
-                <button key={t.name} onClick={() => applyTemplate(t)} className="flex w-full items-start gap-2 rounded px-1.5 py-1 text-left hover:bg-slate-50">
-                  <LayoutTemplate className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                  <span className="min-w-0"><span className="block text-[13px] text-slate-800">{t.name}</span><span className="block truncate text-[11px] text-muted-foreground">{t.hint}</span></span>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {cards.map((c) => (
+          <button key={c.kind} onClick={() => start(c.kind === 'blank' ? 'blank' : c.kind)} className="group text-left">
+            <Card className="h-36 overflow-hidden transition-shadow group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring"><Thumb kind={c.kind} /></Card>
+            <p className="mt-2 text-[14px] font-medium text-slate-900">{c.title}</p>
+            <p className="text-[12px] text-muted-foreground">{c.hint}</p>
+          </button>
+        ))}
+      </div>
+      {gallery && (
+        <Card className="mt-4 p-3">
+          <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wide text-slate-500">Templates: ready-made explorations you can change</p>
+          <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+            {TEMPLATES.map((t, i) => {
+              const Icon = TYPE_ICON[t.technique];
+              return (
+                <button key={t.name} onClick={() => start(t.technique, i)} className="flex items-start gap-2.5 rounded-md p-2 text-left hover:bg-slate-50">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[hsl(213_70%_95%)] text-[hsl(var(--primary))]"><Icon className="h-4 w-4" /></span>
+                  <span className="min-w-0"><span className="block text-[13px] font-medium text-slate-800">{t.name}</span><span className="block text-[12px] text-muted-foreground">{t.hint} · {TECHNIQUES[t.technique].label}</span></span>
                 </button>
-              ))}
-            </div>
-          </Section>
-          <Section title="Rows (break down by)">
-            <div className="space-y-2">
-              {[0, 1].map((i) => (
-                <Select key={i} aria-label={i === 0 ? 'Rows' : 'Then by'} value={st.dims[i] || ''} onChange={(e) => setDim(i, e.target.value)} disabled={i === 1 && !st.dims[0]}>
-                  <option value="">{i === 0 ? 'No breakdown (totals only)' : 'Then by… (optional)'}</option>
-                  {dimOptions.map((d) => <option key={d.key} value={d.key} disabled={!dimOk(d.key) || (st.dims.includes(d.key) && st.dims[i] !== d.key)}>{d.label}{!dimOk(d.key) ? ' — not with these metrics' : ''}</option>)}
-                </Select>
-              ))}
-            </div>
-          </Section>
-          <Section title={`Values (${st.metrics.length}/8)`}>
-            {groups.map((g) => (
-              <div key={g.title} className="mb-2 last:mb-0">
-                <p className="mb-1 text-[11px] text-muted-foreground">{g.title === 'Visits' ? 'Counted per visit' : 'Counted per action (events, page views)'}</p>
-                <div className="flex flex-wrap gap-1">
-                  {g.items.map((m) => {
-                    const on = st.metrics.includes(m.key);
-                    const ok = metOk(m.key) || on;
-                    return (
-                      <button key={m.key} onClick={() => toggleMetric(m.key)} title={ok ? m.label : `Switches to ${g.title.toLowerCase()} metrics`}
-                        className={cn('rounded-full px-2 py-0.5 text-[12px] ring-1 transition-colors', on ? 'bg-[hsl(var(--primary))] text-white ring-[hsl(var(--primary))]' : ok ? 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50' : 'bg-slate-50 text-slate-400 ring-slate-100 hover:text-slate-600')}>
-                        {m.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-            <p className="mt-2 flex gap-1 text-[11px] text-muted-foreground"><Info className="mt-px h-3 w-3 shrink-0" />Visit and action values can't be mixed; picking one from the other group switches over.</p>
-          </Section>
-          <Section title="Visualisation">
-            <div className="grid grid-cols-4 gap-1">
-              {VIZ.map((v) => (
-                <button key={v.key} onClick={() => set({ viz: v.key })} title={v.label} aria-label={v.label} aria-pressed={st.viz === v.key}
-                  className={cn('flex h-10 items-center justify-center rounded ring-1', st.viz === v.key ? 'bg-[hsl(213_70%_95%)] text-[hsl(var(--primary))] ring-[hsl(var(--primary))]' : 'text-slate-500 ring-slate-200 hover:bg-slate-50')}>
-                  <v.icon className="h-4 w-4" />
-                </button>
-              ))}
-            </div>
-          </Section>
-          <Section title="Saved in this browser">
-            <div className="flex gap-1">
-              <Input placeholder="Name this exploration" value={saveName} onChange={(e) => setSaveName(e.target.value)} maxLength={60} />
-              <Button size="sm" variant="outline" onClick={saveCurrent} aria-label="Save exploration"><Save /></Button>
-            </div>
-            {saved.length > 0 && (
-              <ul className="mt-2 space-y-0.5">
-                {saved.map((s) => (
-                  <li key={s.name} className="flex items-center gap-1">
-                    <button onClick={() => set({ dims: s.dims, metrics: s.metrics, viz: s.viz, sort: null })} className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-[13px] hover:bg-slate-50">{s.name}</button>
-                    <button onClick={() => removeSaved(s.name)} className="rounded p-1 text-slate-400 hover:text-red-600" aria-label={`Delete ${s.name}`}><Trash2 className="h-3.5 w-3.5" /></button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
+              );
+            })}
+          </div>
         </Card>
+      )}
 
-        {/* ── Canvas ── */}
-        <div className="min-w-0 space-y-4">
-          {res.error ? <Card><ErrorState error={res.error} onRetry={res.refetch} /></Card> : !st.metrics.length ? (
-            <Card><EmptyState title="Pick at least one value" description="Choose what to count on the left (for example Users or Views), or start from a template." /></Card>
-          ) : (
-            <>
-              {st.viz !== 'table' && (
-                <Card className="overflow-hidden">
-                  {res.isLoading && !data ? <Skeleton className="m-4 h-[260px]" /> : data && <Chart data={data} viz={st.viz} dims={st.dims} metrics={st.metrics} />}
-                </Card>
-              )}
-              <Card className="overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-[12px] text-muted-foreground">
-                  <span>{data ? `${num(data.rowCount)} rows${data.truncated ? ' (showing the first 500)' : ''} · click a column to sort${st.dims.some((d) => DRILL[d]) ? ' · click a value to filter everything by it' : ''}` : 'Loading…'}</span>
-                  {res.isFetching && data && <span>Updating…</span>}
-                </div>
-                {res.isLoading && !data ? <div className="space-y-2 p-3">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-6" />)}</div> : data && (
-                  <div className="max-h-[640px] overflow-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-white">
-                        <TableRow>
-                          {data.dimensions.map((d, i) => <TableHead key={d.key} className="cursor-pointer whitespace-nowrap" onClick={() => i === 0 && sortBy('dim0')}>{d.label}</TableHead>)}
-                          {!data.dimensions.length && <TableHead />}
-                          {data.metrics.map((m) => (
-                            <TableHead key={m.key} className={cn('cursor-pointer whitespace-nowrap text-right', (st.sort || data.metrics[0].key) === m.key && 'text-slate-900')} onClick={() => sortBy(m.key)}>
-                              {m.label}{(st.sort || (st.dims[0] !== 'date' && data.metrics[0].key)) === m.key ? (st.order === 'asc' ? ' ↑' : ' ↓') : ''}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                        <TableRow className="bg-slate-50 font-semibold hover:bg-slate-50">
-                          <TableCell colSpan={Math.max(1, data.dimensions.length)} className="text-[12px]">Total</TableCell>
-                          {data.metrics.map((m) => (
-                            <TableCell key={m.key} className="text-right tabular-nums">
-                              {formatMetric(m, data.total[m.key])}
-                              {data.previousTotal && <span className="block text-[11px] font-normal"><Delta current={data.total[m.key]} previous={data.previousTotal[m.key]} invert={m.lowerIsBetter} /> <span className="text-muted-foreground">vs {formatMetric(m, data.previousTotal[m.key])}</span></span>}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.rows.map((r) => (
-                          <TableRow key={r.dims.join('|') || 'total'}>
-                            {r.dims.map((v, i) => {
-                              const d = st.dims[i];
-                              const drill = DRILL[d] && v !== '(unknown)';
-                              return (
-                                <TableCell key={d} className="max-w-[300px]">
-                                  {drill ? <button onClick={() => setFilter(DRILL[d], v)} className="block max-w-full truncate text-left text-[hsl(var(--primary))] hover:underline" title={`Only show ${formatDim(d, v)}`}>{formatDim(d, v)}</button>
-                                    : <span className="block truncate" title={String(v)}>{formatDim(d, v)}</span>}
-                                </TableCell>
-                              );
-                            })}
-                            {!r.dims.length && <TableCell>All</TableCell>}
-                            {data.metrics.map((m) => (
-                              <TableCell key={m.key} className="whitespace-nowrap text-right tabular-nums">
-                                {formatMetric(m, r.metrics[m.key])}
-                                {'previous' in r && <span className="ml-1.5">{r.previous ? <Delta current={r.metrics[m.key]} previous={r.previous[m.key]} invert={m.lowerIsBetter} /> : <span className="text-[11px] text-muted-foreground">new</span>}</span>}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                        {!data.rows.length && <TableRow><TableCell colSpan={data.dimensions.length + data.metrics.length + 1} className="py-10 text-center text-muted-foreground">No data for this period and these filters.</TableCell></TableRow>}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </Card>
-              {compare && st.dims.includes('date') && <p className="text-[12px] text-muted-foreground">With a Date breakdown, the comparison is shown on the Total row only, since the days don't line up.</p>}
-            </>
-          )}
+      <Card className="mt-6 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+          <div className="relative w-full max-w-xs"><Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" /><Input className="pl-8" placeholder="Search by name or owner" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <span className="ml-auto text-[12px] text-muted-foreground">{data ? `${data.length} exploration${data.length === 1 ? '' : 's'}` : ''}</span>
         </div>
-      </div>
+        {isLoading ? <TableSkeleton rows={4} cols={5} /> : !rows.length ? (
+          <EmptyState icon={LayoutTemplate} title={data?.length ? 'No explorations match' : 'No explorations yet'} description={data?.length ? 'Try another search.' : 'Start one above, or pick a template from the gallery. Explorations are saved automatically and shared with your team.'} action={!data?.length ? <Button onClick={() => start('freeform')}><Plus />New exploration</Button> : null} />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead className="w-16">Type</TableHead><TableHead>Name</TableHead><TableHead>Owner</TableHead><TableHead className="cursor-pointer select-none" onClick={() => setSortDesc((v) => !v)}>Last modified {sortDesc ? '↓' : '↑'}</TableHead><TableHead>Website</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
+              <TableBody>
+                {rows.map((e) => {
+                  const Icon = TYPE_ICON[e.techniques[0]] || Table2;
+                  return (
+                    <TableRow key={e.id} className="cursor-pointer" onClick={() => router.push(`/explore/${e.id}`)}>
+                      <TableCell><span title={e.techniques.map((t) => TECHNIQUES[t]?.label).join(', ')}><Icon className="h-4 w-4 text-slate-500" /></span></TableCell>
+                      <TableCell className="font-medium"><Link href={`/explore/${e.id}`} onClick={(ev) => ev.stopPropagation()} className="hover:underline">{e.name}</Link>{e.tabs.length > 1 && <span className="ml-2 text-[11px] font-normal text-muted-foreground">{e.tabs.length} tabs</span>}</TableCell>
+                      <TableCell className="text-[13px]">{e.owner.me ? 'You' : e.owner.name}</TableCell>
+                      <TableCell className="text-[13px] tabular-nums">{lastModified(e.updatedAt)}</TableCell>
+                      <TableCell className="text-[13px] text-muted-foreground">{siteName(e.site)}</TableCell>
+                      <TableCell onClick={(ev) => ev.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Actions for ${e.name}`}><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => router.push(`/explore/${e.id}`)}><ExternalLink />Open</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => duplicate.mutate(e.id)}><Copy />Duplicate</DropdownMenuItem>
+                            {e.canEdit && <DropdownMenuItem onSelect={() => setRenaming(e)}><Pencil />Rename</DropdownMenuItem>}
+                            {e.canEdit && <><DropdownMenuSeparator /><DropdownMenuItem className="text-red-600" onSelect={() => setDeleting(e)}><Trash2 />Delete</DropdownMenuItem></>}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
+      {renaming && <RenameDialog target={renaming} onClose={() => setRenaming(null)} />}
+      <DeleteDialog target={deleting} onClose={() => setDeleting(null)} />
     </>
   );
 }

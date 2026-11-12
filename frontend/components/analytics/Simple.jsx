@@ -46,8 +46,9 @@ export function Stat({ label, value, current, previous, format = num, invert, he
       )}
       {!loading && previous !== undefined && compare && (
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
-          <Delta current={current} previous={previous} invert={invert} />
-          <span>vs {format(previous)} before</span>
+          {!Number(previous) && Number(current) ? <span>No data in the previous period</span> : (
+            <><Delta current={current} previous={previous} invert={invert} /><span>vs {format(previous)} before</span></>
+          )}
         </div>
       )}
     </>
