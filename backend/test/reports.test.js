@@ -201,3 +201,24 @@ test('insights never invent findings on tiny data; new date presets resolve', as
   const y = await owner.get(`/stats/overview${q({ range: 'yesterday' })}`);
   assert.equal(y.data.current.sessions, 0, 'events sent today are not in yesterday');
 });
+
+test('minute/hour presets and custom date+time ranges', async () => {
+  for (const range of ['5m', '20m', '30m', '1h', '6h', '24h']) {
+    assert.equal((await owner.get(`/stats/overview${q({ range })}`)).status, 200, range);
+  }
+  const ts = await owner.get(`/stats/timeseries${q({ range: '30m' })}`);
+  assert.equal(ts.status, 200);
+  assert.equal(ts.data.interval, 'minute');
+  assert.ok(ts.data.points.length >= 30 && ts.data.points.length <= 32);
+  // An exact window around now (in the org timezone) counts today's sessions; one before them doesn't.
+  const fmt = (d) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d).replace(' ', 'T');
+  const now = Date.now();
+  const around = await owner.get(`/stats/overview${q({ range: '', from: fmt(new Date(now - 3600_000)), to: fmt(new Date(now)) })}`);
+  assert.equal(around.status, 200);
+  assert.ok(around.data.current.sessions > 0);
+  const day = await owner.get(`/stats/overview${q({ range: '', from: fmt(new Date(now)).slice(0, 10) })}`);
+  const before = await owner.get(`/stats/overview${q({ range: '', from: `${fmt(new Date(now)).slice(0, 10)}T00:00`, to: fmt(new Date(now - 3 * 3600_000)) })}`);
+  assert.equal(before.status, 200);
+  assert.ok(before.data.current.sessions <= day.data.current.sessions);
+  assert.equal((await owner.get(`/stats/overview${q({ range: '', from: '2026-01-01T9:30' })}`)).status, 400);
+});

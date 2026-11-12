@@ -107,7 +107,8 @@ async function periodMetrics(scope, from, to, { exact, fromDay, toDay }) {
 export async function overview(scope) {
   const { range } = scope;
   const days = daysBetween(range.fromDay, range.toDay).length;
-  const exact = days <= EXACT_OVERVIEW_MAX_DAYS || hasFilters(scope.filters);
+  // Partial-day ranges (last 30 minutes, custom times…) can't use daily rollups.
+  const exact = days <= EXACT_OVERVIEW_MAX_DAYS || hasFilters(scope.filters) || range.partial;
   const span = range.to - range.from;
   const prevDays = { fromDay: dayKey(range.prevFrom, range.tz), toDay: dayKey(range.prevTo, range.tz) };
   const [current, previous] = await Promise.all([
@@ -121,8 +122,11 @@ export async function overview(scope) {
 export async function timeseries(scope) {
   const { websiteIds, range } = scope;
   const extra = await sessionClause(scope, range.from, range.to);
-  if (range.interval === 'hour') {
-    const unit = { $dateTrunc: { date: '$startedAt', unit: 'hour', timezone: range.tz } };
+  if (range.interval === 'hour' || range.interval === 'minute') {
+    const iv = range.interval;
+    const step = iv === 'minute' ? 60_000 : 3600_000;
+    const trunc = (field) => ({ $dateTrunc: { date: field, unit: iv, timezone: range.tz } });
+    const unit = trunc('$startedAt');
     const [sess, pvs, leads, conv, clickers] = await Promise.all([
       col('sessions').aggregate([
         { $match: { websiteId: { $in: websiteIds }, startedAt: { $gte: range.from, $lte: range.to }, ...extra } },
@@ -131,30 +135,31 @@ export async function timeseries(scope) {
       ]).toArray(),
       col('pageViews').aggregate([
         { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...extra } },
-        { $group: { _id: { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, n: { $sum: 1 } } },
+        { $group: { _id: trunc('$ts'), n: { $sum: 1 } } },
       ]).toArray(),
       col('leads').aggregate([
         { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...extra } },
-        { $group: { _id: { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, n: { $sum: 1 } } },
+        { $group: { _id: trunc('$ts'), n: { $sum: 1 } } },
       ]).toArray(),
       col('conversions').aggregate([
         { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...extra } },
-        { $group: { _id: { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, n: { $sum: 1 } } },
+        { $group: { _id: trunc('$ts'), n: { $sum: 1 } } },
       ]).toArray(),
-      uniqueClickers(websiteIds, range.from, range.to, { $dateTrunc: { date: '$ts', unit: 'hour', timezone: range.tz } }, extra),
+      uniqueClickers(websiteIds, range.from, range.to, trunc('$ts'), extra),
     ]);
     // Buckets must start on local (tz) hours, exactly like $dateTrunc above. Using UTC hours here made every
     // lookup miss in IST (+5:30), so the 24h chart showed a flat zero line even though totals had data.
+    // (Every timezone offset is a whole number of minutes, so minute buckets line up in any zone.)
     const map = new Map();
-    const start = startOfHourInTz(range.from.getTime(), range.tz);
-    for (let t = start; t <= range.to.getTime(); t += 3600_000) map.set(t, { t: new Date(t).toISOString(), visitors: 0, sessions: 0, pageviews: 0, leads: 0, conversions: 0, clicks: 0 });
+    const start = iv === 'minute' ? Math.floor(range.from.getTime() / 60_000) * 60_000 : startOfHourInTz(range.from.getTime(), range.tz);
+    for (let t = start; t <= range.to.getTime(); t += step) map.set(t, { t: new Date(t).toISOString(), visitors: 0, sessions: 0, pageviews: 0, leads: 0, conversions: 0, clicks: 0 });
     const at = (d) => map.get(new Date(d).getTime());
     sess.forEach((r) => { const p = at(r._id); if (p) { p.visitors = r.visitors; p.sessions = r.sessions; } });
     pvs.forEach((r) => { const p = at(r._id); if (p) p.pageviews = r.n; });
     leads.forEach((r) => { const p = at(r._id); if (p) p.leads = r.n; });
     conv.forEach((r) => { const p = at(r._id); if (p) p.conversions = r.n; });
     clickers.forEach((r) => { const p = at(r._id); if (p) p.clicks = r.n; });
-    return { interval: 'hour', points: [...map.values()] };
+    return { interval: iv, points: [...map.values()] };
   }
   const dayKeyExpr = { $dateToString: { date: '$startedAt', format: '%Y-%m-%d', timezone: range.tz } };
   const dayEngaged = await col('sessions').aggregate([
@@ -165,7 +170,7 @@ export async function timeseries(scope) {
   const engagedByDay = Object.fromEntries(dayEngaged.map((r) => [r._id, r.n]));
   const dayClicks = await uniqueClickers(websiteIds, range.from, range.to, { $dateToString: { date: '$ts', format: '%Y-%m-%d', timezone: range.tz } }, extra);
   const clicksByDay = Object.fromEntries(dayClicks.map((r) => [r._id, r.n]));
-  if (hasFilters(scope.filters)) return { interval: 'day', points: await filteredDays(scope, extra, engagedByDay, clicksByDay) };
+  if (hasFilters(scope.filters) || range.partial) return { interval: 'day', points: await filteredDays(scope, extra, engagedByDay, clicksByDay) };
   const rows = await col('aggDaily').aggregate([
     { $match: { websiteId: { $in: websiteIds }, day: { $gte: range.fromDay, $lte: range.toDay } } },
     { $group: { _id: '$day', visitors: { $sum: '$visitors' }, sessions: { $sum: '$sessions' }, pageviews: { $sum: '$pageviews' }, leads: { $sum: '$leads' }, conversions: { $sum: '$conversions' }, bounces: { $sum: '$bounces' }, searches: { $sum: '$searches' } } },
@@ -204,7 +209,7 @@ export async function pages(scope, { q, limit = 100, sort = 'pageviews', order =
   const sortKey = ['pageviews', 'visitors', 'entries', 'exits', 'avgTimeMs'].includes(sort) ? sort : 'pageviews';
   const dir = order === 'asc' ? 1 : -1;
   const cap = Math.min(500, limit);
-  const rows = hasFilters(scope.filters)
+  const rows = hasFilters(scope.filters) || range.partial
     ? await filteredPages(scope, { q, sortKey, dir, cap })
     : await col('aggDailyPages').aggregate([
       { $match: { websiteId: { $in: websiteIds }, day: { $gte: range.fromDay, $lte: range.toDay }, ...(q ? { path: { $regex: escapeRegex(q), $options: 'i' } } : {}) } },
@@ -248,7 +253,7 @@ async function filteredPages(scope, { q, sortKey, dir, cap }) {
 // ─── Dimension breakdowns (sources, geo, devices, campaigns…) ─────────────
 export async function dimension(scope, dim, { limit = 50 } = {}) {
   const { websiteIds, range } = scope;
-  const rows = hasFilters(scope.filters) ? await filteredDimension(scope, dim, Math.min(500, limit)) : await col('aggDailyDims').aggregate([
+  const rows = hasFilters(scope.filters) || range.partial ? await filteredDimension(scope, dim, Math.min(500, limit)) : await col('aggDailyDims').aggregate([
     { $match: { websiteId: { $in: websiteIds }, dim, day: { $gte: range.fromDay, $lte: range.toDay } } },
     { $group: { _id: '$value', visitors: { $sum: '$visitors' }, sessions: { $sum: '$sessions' }, pageviews: { $sum: '$pageviews' }, bounces: { $sum: '$bounces' }, conversions: { $sum: '$conversions' }, durationMs: { $sum: '$durationMs' }, count: { $sum: '$count' } } },
     { $sort: { sessions: -1, count: -1 } },
