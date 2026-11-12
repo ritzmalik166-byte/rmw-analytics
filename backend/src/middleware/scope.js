@@ -1,11 +1,12 @@
 import { listWebsites } from '../services/websiteService.js';
 import { notFound } from '../utils/errors.js';
 import { resolveRange, DEFAULT_TZ } from '../utils/dates.js';
+import { parseFilters } from '../services/filters.js';
 
 /**
  * Resolve `?site=all|<websiteId>` into the websites the caller may see (always within their org),
  * plus the date range in the organisation's reporting timezone.
- * Sets req.scope = { websites, websiteIds, single, tz, range }.
+ * Sets req.scope = { websites, websiteIds, single, tz, range, filters } (filters: see services/filters.js).
  */
 export async function resolveScope(req, _res, next) {
   try {
@@ -25,6 +26,7 @@ export async function resolveScope(req, _res, next) {
       single: site !== 'all' ? selected[0] : null,
       tz,
       range: resolveRange(req.query, tz),
+      filters: parseFilters(req.query),
     };
     next();
   } catch (err) {

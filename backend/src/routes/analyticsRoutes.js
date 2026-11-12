@@ -18,6 +18,9 @@ import { subscribe, activeVisitors } from '../services/realtime.js';
 import { invalidateGoals } from '../services/ingest/ingestService.js';
 import { audit } from '../services/auditService.js';
 import * as replays from '../services/replayService.js';
+import { insights } from '../services/insightsService.js';
+import { explore, catalog as exploreCatalog } from '../services/exploreService.js';
+import { backfillGoal, BACKFILL_DAYS } from '../services/goalService.js';
 
 const router = express.Router();
 const read = requirePermission('analytics:read');
@@ -44,7 +47,22 @@ router.delete('/replays/:websiteId/:sessionId', requirePermission('visitors:dele
 // ─── Stats ─────────────────────────────────────────────────────────────────
 router.get('/stats/overview', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.overview(req.scope))));
 router.get('/stats/timeseries', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.timeseries(req.scope))));
-router.get('/stats/pages', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.pages(req.scope, { q: req.query.q, sort: req.query.sort, limit: Number(req.query.limit) || 100 }))));
+router.get('/stats/pages', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.pages(req.scope, { q: req.query.q, sort: req.query.sort, order: req.query.order === 'asc' ? 'asc' : 'desc', limit: Number(req.query.limit) || 100 }))));
+router.get('/stats/page', read, resolveScope, asyncHandler(async (req, res) => {
+  if (!req.query.path) throw badRequest('path is required');
+  ok(res, await stats.pageDetail(req.scope, String(req.query.path).slice(0, 500)));
+}));
+router.get('/stats/insights', read, resolveScope, asyncHandler(async (req, res) => ok(res, await insights(req.scope))));
+router.get('/stats/clicks', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.clicks(req.scope, { kind: String(req.query.kind || 'all') }))));
+router.get('/stats/explore/catalog', read, (_req, res) => ok(res, exploreCatalog()));
+router.get('/stats/explore', read, resolveScope, asyncHandler(async (req, res) => {
+  const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+  ok(res, await explore(req.scope, {
+    dimensions: list(req.query.dims), metrics: list(req.query.metrics), sort: req.query.sort ? String(req.query.sort) : undefined,
+    order: req.query.order === 'asc' ? 'asc' : 'desc', limit: Number(req.query.limit) || 250, compare: req.query.compare === '1',
+  }));
+}));
+router.get('/stats/conversions', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.conversionsReport(req.scope))));
 router.get('/stats/dimension/:dim', read, resolveScope, asyncHandler(async (req, res) => {
   if (!DIMS.includes(req.params.dim)) throw badRequest('Unknown dimension', 'BAD_DIMENSION');
   ok(res, await stats.dimension(req.scope, req.params.dim, { limit: Number(req.query.limit) || 50 }));
@@ -155,15 +173,21 @@ router.post('/goals', requirePermission('websites:write'), resolveScope, asyncHa
   const body = validate(goalSchema, req.body);
   const wid = oid(body.websiteId);
   if (!req.scope.allWebsiteIds.some((id) => id.equals(wid))) throw notFound('Website not found');
-  const { insertedId } = await col('goals').insertOne({ ...body, websiteId: wid, createdAt: new Date() });
+  const website = req.scope.allWebsites.find((w) => w._id.equals(wid));
+  if (await col('goals').findOne({ websiteId: wid, type: body.type, match: body.match })) throw badRequest('This is already counted as a conversion for this website', 'GOAL_EXISTS');
+  const doc = { ...body, websiteId: wid, createdAt: new Date() };
+  const { insertedId } = await col('goals').insertOne(doc);
   invalidateGoals(wid);
-  await audit(req, 'goal.created', { target: String(insertedId), meta: { name: body.name } });
-  ok(res, { id: String(insertedId) }, 'Goal created', 201);
+  // Count matching activity from the last BACKFILL_DAYS too (skippable with ?backfill=false).
+  const backfilled = req.query.backfill === 'false' ? 0 : await backfillGoal(doc, website);
+  await audit(req, 'goal.created', { target: String(insertedId), meta: { name: body.name, backfilled } });
+  ok(res, { id: String(insertedId), backfilled, backfillDays: BACKFILL_DAYS }, 'Goal created', 201);
 }));
 router.delete('/goals/:id', requirePermission('websites:write'), resolveScope, asyncHandler(async (req, res) => {
   const g = await col('goals').findOneAndDelete({ _id: oid(req.params.id), websiteId: { $in: req.scope.allWebsiteIds } });
   const doc = g?.value ?? g;
   if (doc?.websiteId) invalidateGoals(doc.websiteId);
+  // Past conversions are kept (they happened); new activity simply stops counting.
   ok(res, null, 'Goal deleted');
 }));
 

@@ -8,7 +8,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { createGunzip } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_GEOIP_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data/geoip/dbip-city-lite.mmdb');
@@ -26,17 +28,20 @@ export async function downloadGeoip(dest = DEFAULT_GEOIP_PATH, log = console.log
   for (const offset of [0, 1]) {
     const url = `https://download.db-ip.com/free/dbip-city-lite-${monthKey(offset)}.mmdb.gz`;
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const db = gunzipSync(Buffer.from(await res.arrayBuffer()));
+      const res = await fetch(url, { signal: AbortSignal.timeout(600_000) });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const tmp = `${dest}.tmp`;
-      fs.writeFileSync(tmp, db);
+      // Streamed straight to disk: buffering the ~125 MB file in memory can get the process killed on a small droplet.
+      await pipeline(Readable.fromWeb(res.body), createGunzip(), fs.createWriteStream(tmp));
+      const size = fs.statSync(tmp).size;
+      if (size < 10e6) { fs.rmSync(tmp, { force: true }); throw new Error(`file too small (${size} bytes)`); }
       fs.renameSync(tmp, dest); // atomic swap, so a running server never reads a half-written file
-      log(`GeoIP database saved to ${dest} (${(db.length / 1e6).toFixed(1)} MB, ${monthKey(offset)})`);
+      log(`GeoIP database saved to ${dest} (${(size / 1e6).toFixed(1)} MB, ${monthKey(offset)})`);
       return dest;
     } catch (err) {
       lastErr = err;
+      fs.rmSync(`${dest}.tmp`, { force: true });
     }
   }
   throw new Error(`Could not download the GeoIP database: ${lastErr?.message}`);

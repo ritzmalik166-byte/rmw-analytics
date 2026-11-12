@@ -6,6 +6,7 @@ const DOWNLOAD_RE = /\.(pdf|zip|docx?|xlsx?|pptx?|csv|mp3|mp4|dmg|exe|apk|rar|7z
 const RAGE_COUNT = 3;
 const RAGE_MS = 700;
 const RAGE_PX = 30;
+const CONTACT = { 'tel:': 'phone_click', 'sms:': 'phone_click', 'mailto:': 'email_click', 'whatsapp:': 'whatsapp_click' };
 
 /** Short, stable-ish CSS selector: tag#id or tag.c1.c2, prefixed with the nearest ancestor id. */
 export function selector(el) {
@@ -120,8 +121,14 @@ export function installClicks(t) {
         t.track('outbound_click', Object.assign(base, { href: link.href, domain: link.domain }), { urgent: true });
         return;
       }
-      if (link && link.type === 'contact') base.href = link.scheme; // never the address/number itself
-      else if (link) base.href = clip(link.href, 300);
+      if (link && link.type === 'contact') {
+        // tel:/mailto:/WhatsApp get their own events so they can be counted as conversions.
+        // Only the link type is sent, never the number or address itself.
+        base.href = link.scheme;
+        t.track(CONTACT[link.scheme] || 'contact_click', base, { urgent: true });
+        return;
+      }
+      if (link) base.href = clip(link.href, 300);
     }
     t.track('click', base);
   }), { capture: true, passive: true });

@@ -44,7 +44,7 @@ export function daysBetween(fromDay, toDay) {
   return out;
 }
 
-const PRESETS = { today: 0, '24h': 1, '7d': 6, '30d': 29, '90d': 89, '12m': 364 };
+const PRESETS = { today: 0, '24h': 1, '7d': 6, '28d': 27, '30d': 29, '90d': 89, '12m': 364 };
 
 /**
  * Resolve a query (`range=7d` or `from=YYYY-MM-DD&to=YYYY-MM-DD`) into concrete instants in the org timezone.
@@ -62,6 +62,9 @@ export function resolveRange(q = {}, tz = DEFAULT_TZ) {
     from = new Date(now.getTime() - DAY_MS);
     fromDay = dayKey(from, tz);
     toDay = today;
+  } else if (q.range === 'yesterday') {
+    fromDay = addDays(today, -1);
+    toDay = fromDay;
   } else if (q.from || q.to) {
     const re = /^\d{4}-\d{2}-\d{2}$/;
     fromDay = String(q.from || q.to).slice(0, 10);

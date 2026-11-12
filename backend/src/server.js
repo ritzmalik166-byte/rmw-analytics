@@ -5,6 +5,7 @@ import { connectDb, closeDb } from './config/db.js';
 import { getRedis, closeRedis } from './config/redis.js';
 import { createApp } from './app.js';
 import { startJobs } from './services/jobs.js';
+import { warmGeo } from './utils/geo.js';
 
 let server;
 let stopJobs = () => {};
@@ -20,6 +21,7 @@ async function start() {
   if (!(await getRedis())) logger.warn('REDIS_URL not set: realtime fan-out and site quotas are per-process (fine for a single instance).');
   if (env.RUN_JOBS_IN_PROCESS) stopJobs = startJobs();
 
+  warmGeo();
   server = http.createServer(createApp());
   server.keepAliveTimeout = 65_000; // above typical load-balancer idle timeouts
   server.headersTimeout = 66_000;

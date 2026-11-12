@@ -200,7 +200,9 @@ test('stats: rollup then overview, pages, sources, searches, realtime, visitor p
   await rollupRecent();
   const ov = await owner.get(`/stats/overview?site=${site.id}&range=today`);
   assert.equal(ov.status, 200, JSON.stringify(ov.json));
-  assert.ok(ov.data.current.visitors >= 4, `visitors ${ov.data.current.visitors}`);
+  // `visitors` counts engaged people only (GA4 definition); every visitor is `allVisitors`.
+  assert.ok(ov.data.current.allVisitors >= 4, `allVisitors ${ov.data.current.allVisitors}`);
+  assert.ok(ov.data.current.visitors <= ov.data.current.allVisitors);
   assert.ok(ov.data.current.pageviews >= 2);
   assert.equal(ov.data.current.leads, 1);
   const pages = await owner.get('/stats/pages?site=all&range=today');

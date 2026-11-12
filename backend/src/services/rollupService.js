@@ -8,7 +8,7 @@ import { dayKey, startOfDayInTz, addDays, daysBetween, DEFAULT_TZ } from '../uti
  * re-run for "today" every minute and for any historical day as a backfill.
  */
 
-const SESSION_DIMS = {
+export const SESSION_DIMS = {
   channel: '$channel',
   source: '$source',
   referrer: { $ifNull: ['$referrerHost', '(direct)'] },
@@ -27,7 +27,7 @@ const SESSION_DIMS = {
   entry: '$entryPath',
 };
 
-const sessionDimFacet = (expr) => [
+export const sessionDimFacet = (expr) => [
   { $group: { _id: { value: expr, visitorId: '$visitorId' }, sessions: { $sum: 1 }, pageviews: { $sum: '$pageviews' }, bounces: { $sum: { $cond: ['$bounced', 1, 0] } }, conversions: { $sum: { $cond: ['$converted', 1, 0] } }, durationMs: { $sum: '$durationMs' }, isNew: { $max: '$isNew' } } },
   { $group: { _id: '$_id.value', visitors: { $sum: 1 }, newVisitors: { $sum: { $cond: ['$isNew', 1, 0] } }, sessions: { $sum: '$sessions' }, pageviews: { $sum: '$pageviews' }, bounces: { $sum: '$bounces' }, conversions: { $sum: '$conversions' }, durationMs: { $sum: '$durationMs' } } },
   { $match: { _id: { $nin: [null, ''] } } },

@@ -15,6 +15,7 @@ import authRoutes from './routes/authRoutes.js';
 import orgRoutes from './routes/orgRoutes.js';
 import websiteRoutes from './routes/websiteRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
+import { geoStatus } from './utils/geo.js';
 
 export function createApp() {
   const app = express();
@@ -38,7 +39,7 @@ export function createApp() {
   app.use(compression({ filter: (req, res) => !req.path.endsWith('/realtime/stream') && compression.filter(req, res) }));
 
   app.get('/health', async (_req, res) => {
-    try { res.json({ ok: true, db: `${await pingDb()}ms` }); } catch { res.status(503).json({ ok: false }); }
+    try { res.json({ ok: true, db: `${await pingDb()}ms`, geoip: (({ state, error, lookups, hits }) => ({ state, error, lookups, hits }))(geoStatus()) }); } catch { res.status(503).json({ ok: false }); }
   });
 
   // Public, cross-origin: tracker script, site config, event ingestion. No cookies, own CORS.

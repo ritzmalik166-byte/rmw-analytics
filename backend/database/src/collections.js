@@ -68,6 +68,9 @@ export const INDEXES = {
     { key: { websiteId: 1, startedAt: -1 } },
     { key: { websiteId: 1, visitorId: 1, startedAt: -1 } },
     { key: { websiteId: 1, lastSeenAt: -1 } },
+    // Page report: entries / exits of one page.
+    { key: { websiteId: 1, entryPath: 1, startedAt: -1 } },
+    { key: { websiteId: 1, exitPath: 1, startedAt: -1 } },
     ttl,
   ],
   [C.events]: [
@@ -76,6 +79,8 @@ export const INDEXES = {
     { key: { websiteId: 1, name: 1, ts: -1 } },
     { key: { websiteId: 1, visitorId: 1, ts: 1 } },
     { key: { websiteId: 1, sessionId: 1, ts: 1 } },
+    // Page report "top actions" (events on one page).
+    { key: { websiteId: 1, 'page.path': 1, ts: -1 } },
     ttl,
   ],
   [C.pageViews]: [
@@ -101,7 +106,13 @@ export const INDEXES = {
     { key: { websiteId: 1, visitorId: 1 } },
     ttl,
   ],
-  [C.conversions]: [{ key: { websiteId: 1, ts: -1 } }, { key: { websiteId: 1, goal: 1, ts: -1 } }, ttl],
+  [C.conversions]: [
+    { key: { websiteId: 1, ts: -1 } },
+    { key: { websiteId: 1, goal: 1, ts: -1 } },
+    { key: { websiteId: 1, sessionId: 1 } },
+    { key: { websiteId: 1, path: 1, ts: -1 } },
+    ttl,
+  ],
   [C.goals]: [{ key: { websiteId: 1 } }],
   [C.campaigns]: [{ key: { websiteId: 1, source: 1, medium: 1, campaign: 1 }, unique: true }, { key: { websiteId: 1, lastSeen: -1 } }],
   [C.funnels]: [{ key: { orgId: 1 } }],
