@@ -19,7 +19,9 @@ import { invalidateGoals } from '../services/ingest/ingestService.js';
 import { audit } from '../services/auditService.js';
 import * as replays from '../services/replayService.js';
 import { insights } from '../services/insightsService.js';
-import { explore, catalog as exploreCatalog } from '../services/exploreService.js';
+import { explore, pathExplore, catalog as exploreCatalog } from '../services/exploreService.js';
+import * as explorations from '../services/explorationService.js';
+import { sessionClause } from '../services/filters.js';
 import { backfillGoal, BACKFILL_DAYS } from '../services/goalService.js';
 
 const router = express.Router();
@@ -55,6 +57,23 @@ router.get('/stats/page', read, resolveScope, asyncHandler(async (req, res) => {
 router.get('/stats/insights', read, resolveScope, asyncHandler(async (req, res) => ok(res, await insights(req.scope))));
 router.get('/stats/clicks', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.clicks(req.scope, { kind: String(req.query.kind || 'all') }))));
 router.get('/stats/explore/catalog', read, (_req, res) => ok(res, exploreCatalog()));
+router.get('/stats/explore/path', read, resolveScope, asyncHandler(async (req, res) => {
+  let chain = [];
+  try { chain = req.query.chain ? JSON.parse(String(req.query.chain)) : []; } catch { throw badRequest('chain must be a JSON array'); }
+  if (!Array.isArray(chain) || chain.length > 9 || chain.some((c) => typeof c !== 'string' || c.length > 500)) throw badRequest('chain must be up to 9 node names');
+  ok(res, await pathExplore(req.scope, {
+    nodeType: req.query.node === 'page' ? 'page' : 'event', start: req.query.start ? String(req.query.start).slice(0, 500) : undefined,
+    chain, unique: req.query.unique !== '0', limit: Math.min(20, Number(req.query.limit) || 8),
+  }));
+}));
+
+// ─── Saved explorations ────────────────────────────────────────────────────
+router.get('/explorations', read, asyncHandler(async (req, res) => ok(res, await explorations.listExplorations(req))));
+router.post('/explorations', read, asyncHandler(async (req, res) => ok(res, await explorations.createExploration(req, req.body), 'Exploration saved', 201)));
+router.get('/explorations/:id', read, asyncHandler(async (req, res) => ok(res, await explorations.getExploration(req, req.params.id))));
+router.patch('/explorations/:id', read, asyncHandler(async (req, res) => ok(res, await explorations.updateExploration(req, req.params.id, req.body))));
+router.delete('/explorations/:id', read, asyncHandler(async (req, res) => { await explorations.deleteExploration(req, req.params.id); ok(res, null, 'Exploration deleted'); }));
+router.post('/explorations/:id/duplicate', read, asyncHandler(async (req, res) => ok(res, await explorations.duplicateExploration(req, req.params.id), 'Exploration duplicated', 201)));
 router.get('/stats/explore', read, resolveScope, asyncHandler(async (req, res) => {
   const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
   ok(res, await explore(req.scope, {
@@ -162,7 +181,7 @@ router.get('/funnels/:id/report', read, resolveScope, asyncHandler(async (req, r
 /** Ad-hoc funnel (preview while building, nothing saved). */
 router.post('/funnels/preview', read, resolveScope, asyncHandler(async (req, res) => {
   const body = validate(funnelSchema.extend({ name: funnelSchema.shape.name.optional() }), req.body);
-  ok(res, await funnels.funnelReport({ ...body, websiteId: body.websiteId ? oid(body.websiteId) : null }, req.scope.websiteIds, req.scope.range));
+  ok(res, await funnels.funnelReport({ ...body, websiteId: body.websiteId ? oid(body.websiteId) : null }, req.scope.websiteIds, req.scope.range, await sessionClause(req.scope, req.scope.range.from, req.scope.range.to)));
 }));
 
 router.get('/goals', read, resolveScope, asyncHandler(async (req, res) => {

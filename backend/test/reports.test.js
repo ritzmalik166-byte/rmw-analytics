@@ -151,6 +151,46 @@ test('explore: free-form dimensions × metrics, totals, filters and incompatible
   assert.equal((await owner.get('/stats/explore/catalog')).data.dimensions.length > 10, true);
 });
 
+test('path exploration: steps from a starting node, expanding a chain', async () => {
+  const pages = await owner.get(`/stats/explore/path${q({ node: 'page' })}`);
+  assert.equal(pages.status, 200, JSON.stringify(pages.json));
+  assert.deepEqual(pages.data.columns[0].nodes, [{ value: '/', count: 2 }, { value: '/about', count: 1 }]);
+  const next = await owner.get(`/stats/explore/path${q({ node: 'page', chain: JSON.stringify(['/']) })}`);
+  assert.deepEqual(next.data.columns[1].nodes, [{ value: '(exit)', count: 1 }, { value: '/contact', count: 1 }]);
+  const ev = await owner.get(`/stats/explore/path${q({ node: 'event', start: 'form_start', chain: JSON.stringify(['form_start']) })}`);
+  assert.equal(ev.data.sessions, 1);
+  assert.deepEqual(ev.data.columns[1].nodes.map((n) => n.value), ['form_submit']);
+  assert.equal((await owner.get(`/stats/explore/path${q({ chain: 'nope' })}`)).status, 400);
+});
+
+test('saved explorations: create, list with owner, update, duplicate, delete', async () => {
+  const body = { name: 'Traffic deep dive', site: site.id, range: { key: '28d' }, segments: [{ id: 's1', name: 'Mobile traffic', conditions: { device: 'mobile' } }], tabs: [{ id: 't1', name: 'Free-form 1', technique: 'freeform', config: { dims: ['channel'], metrics: ['users'] } }] };
+  const created = await owner.post('/explorations', body);
+  assert.equal(created.status, 201, JSON.stringify(created.json));
+  assert.equal(created.data.owner.me, true);
+  const list = await owner.get('/explorations');
+  assert.equal(list.data[0].name, 'Traffic deep dive');
+  assert.equal(list.data[0].owner.name, 'Owner');
+  const upd = await owner.patch(`/explorations/${created.data.id}`, { name: 'Renamed' });
+  assert.equal(upd.data.name, 'Renamed');
+  assert.equal((await owner.patch(`/explorations/${created.data.id}`, { tabs: [] })).status, 400, 'an exploration keeps at least one tab');
+  const dup = await owner.post(`/explorations/${created.data.id}/duplicate`);
+  assert.equal(dup.data.name, 'Renamed (copy)');
+  assert.equal((await owner.get(`/explorations/${dup.data.id}`)).data.segments[0].conditions.device, 'mobile');
+  assert.equal((await owner.del(`/explorations/${dup.data.id}`)).status, 200);
+  assert.equal((await owner.get(`/explorations/${dup.data.id}`)).status, 404);
+});
+
+test('funnel preview respects segment filters', async () => {
+  const steps = [{ type: 'path', match: '/' }, { type: 'path', match: '/contact' }];
+  const all = await owner.post(`/funnels/preview${q({})}`, { steps });
+  assert.equal(all.status, 200, JSON.stringify(all.json));
+  const mobile = await owner.post(`/funnels/preview${q({ f_device: 'mobile' })}`, { steps });
+  assert.ok(all.data.steps[0].count >= 2, JSON.stringify(all.data));
+  assert.equal(mobile.data.steps[0].count, 1);
+  assert.equal(mobile.data.steps[1].count, 0);
+});
+
 test('insights never invent findings on tiny data; new date presets resolve', async () => {
   const r = await owner.get(`/stats/insights${q()}`);
   assert.equal(r.status, 200);

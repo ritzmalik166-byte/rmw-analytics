@@ -62,7 +62,7 @@ function compileStep(step) {
  * Compute step counts. Streams matching events sorted by visitor then time, and walks each visitor's
  * events once (O(n)). Each visitor is counted at most once per step, in order, within the window.
  */
-export async function funnelReport(funnel, websiteIds, range) {
+export async function funnelReport(funnel, websiteIds, range, extra = {}) {
   const steps = funnel.steps.map(compileStep);
   const names = [...new Set(steps.flatMap((s) => s.names))];
   const ids = funnel.websiteId ? websiteIds.filter((id) => id.equals(funnel.websiteId)) : websiteIds;
@@ -72,7 +72,7 @@ export async function funnelReport(funnel, websiteIds, range) {
   let visitors = 0;
 
   const cursor = col('events').find(
-    { websiteId: { $in: ids }, name: { $in: names }, ts: { $gte: range.from, $lte: range.to } },
+    { websiteId: { $in: ids }, name: { $in: names }, ts: { $gte: range.from, $lte: range.to }, ...extra },
     { projection: { websiteId: 1, visitorId: 1, name: 1, ts: 1, 'page.path': 1, 'props.query': 1, 'props.form': 1 }, sort: { websiteId: 1, visitorId: 1, ts: 1 }, allowDiskUse: true, batchSize: 5000 },
   );
 

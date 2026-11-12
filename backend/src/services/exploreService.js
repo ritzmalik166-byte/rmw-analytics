@@ -214,6 +214,58 @@ export async function explore(scope, { dimensions, metrics, sort, order = 'desc'
   };
 }
 
+// ─── Path exploration ──────────────────────────────────────────────────────
+const PATH_NOISE = [...NOISE, 'scroll', 'session_start', 'identify'];
+const MAX_PATH_SESSIONS = 50_000;
+const MAX_NODES = 40;
+export const PATH_END = '(exit)';
+
+/**
+ * Path exploration (GA4 "Path"): what visitors did step by step.
+ * nodeType: 'event' (action names) or 'page' (page paths). start: optional starting node; each visit's path
+ * then begins at its first occurrence. chain: nodes the user expanded, one per step. unique: collapse
+ * repeats of the same node in a row. Returns one column per step: column 0 counts the starting nodes,
+ * column j counts the next node among visits whose first j nodes equal the chain. Counts are visits.
+ */
+export async function pathExplore(scope, { nodeType = 'event', start, chain = [], unique = true, limit = 8 }) {
+  const { websiteIds, range } = scope;
+  const extra = await sessionClause(scope, range.from, range.to);
+  const isPage = nodeType === 'page';
+  const steps = Math.min(chain.length + 1, 10);
+  const seqs = await col(isPage ? 'pageViews' : 'events').aggregate([
+    { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...(isPage ? {} : { name: { $nin: PATH_NOISE } }), ...extra } },
+    // _id breaks ties between events recorded in the same millisecond (they were inserted in order).
+    { $sort: { ts: 1, _id: 1 } },
+    { $group: { _id: { w: '$websiteId', s: '$sessionId' }, nodes: { $push: isPage ? '$path' : '$name' } } },
+    { $project: { nodes: { $slice: ['$nodes', 200] } } },
+    { $limit: MAX_PATH_SESSIONS },
+  ], { allowDiskUse: true }).toArray();
+
+  const paths = [];
+  for (const s of seqs) {
+    let n = unique ? s.nodes.filter((x, i) => i === 0 || x !== s.nodes[i - 1]) : s.nodes;
+    if (start) { const i = n.indexOf(start); if (i === -1) continue; n = n.slice(i); }
+    paths.push(n.slice(0, MAX_NODES));
+  }
+  const columns = [];
+  let alive = paths;
+  for (let j = 0; j < steps; j += 1) {
+    const counts = new Map();
+    for (const p of alive) { const v = p[j] ?? PATH_END; counts.set(v, (counts.get(v) || 0) + 1); }
+    const all = [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || String(a.value).localeCompare(String(b.value)));
+    const top = all.slice(0, limit);
+    const rest = all.slice(limit);
+    columns.push({
+      step: j, total: alive.length, nodes: top,
+      more: rest.length ? { nodes: rest.length, count: rest.reduce((s, r) => s + r.count, 0) } : null,
+      selected: chain[j] ?? null,
+    });
+    if (j === steps - 1 || chain[j] == null || chain[j] === PATH_END) break;
+    alive = alive.filter((p) => p[j] === chain[j]);
+  }
+  return { nodeType, start: start || null, unique, sessions: paths.length, sampled: seqs.length >= MAX_PATH_SESSIONS, columns };
+}
+
 export const catalog = () => ({
   dimensions: Object.entries(DIMENSIONS).map(([key, d]) => ({ key, ...d })),
   metrics: Object.entries(METRICS).map(([key, m]) => ({ key, ...m })),
