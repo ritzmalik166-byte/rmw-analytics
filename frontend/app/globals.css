@@ -41,3 +41,34 @@
   .panel-title { @apply text-[12px] font-semibold uppercase tracking-wide text-slate-600; }
   .kv-label { @apply text-[11px] font-medium uppercase tracking-wide text-muted-foreground; }
 }
+
+@keyframes rec-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Layout polish & responsiveness (same navy/saffron theme) ── */
+@layer base {
+  body { -webkit-tap-highlight-color: transparent; }
+  ::selection { background: hsl(213 70% 88%); }
+}
+.nav-scroll { scrollbar-width: thin; scrollbar-color: hsl(214 20% 80%) transparent; }
+.nav-scroll::-webkit-scrollbar { width: 6px; }
+.nav-scroll::-webkit-scrollbar-thumb { background: hsl(214 20% 82%); border-radius: 6px; }
+.table-scroll { scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.app-main { animation: rec-fade-in 220ms ease-out; }
+
+@media (max-width: 639px) {
+  html { font-size: 13.5px; }
+  /* Full-width cards hug the screen edges a little less on phones */
+  .app-main { padding-bottom: 5rem; }
+  /* Header actions on report pages: buttons share the row and wrap neatly */
+  .page-actions > * { flex: 1 1 auto; }
+  .page-actions > * > button, .page-actions > button, .page-actions > a { justify-content: center; }
+  /* Tables: tighter cells, no hover tint stuck after tap */
+  .table-scroll th, .table-scroll td { padding-left: 0.5rem; padding-right: 0.5rem; }
+  /* Dialogs become bottom-friendly */
+  [role='dialog'] { max-height: 92vh; }
+  /* Inputs at 16px stop iOS zoom-on-focus */
+  input, select, textarea { font-size: 16px !important; }
+}
+@media (hover: none) {
+  tr:hover { background: transparent; }
+}

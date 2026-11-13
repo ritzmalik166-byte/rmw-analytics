@@ -4,6 +4,7 @@ import { Flag, MapPin, MousePointerClick, Clock, Smartphone, Monitor, Tablet, Pl
 import { CHANNELS } from '@rmw-analytics/shared/channels';
 import { cn, formatHm, formatDate, duration, flag, countryName } from '@/lib/utils';
 import { ICON, describe, meaningfulSteps } from './Journey';
+import { WatchLink } from '@/components/analytics/RecordingModal';
 
 /** Roadmap colours: blue = pages, yellow = actions, red = key moments. */
 export const STOP = {
@@ -113,12 +114,12 @@ export function JourneyRoadmap({ journey = [], sessions = [], websiteId }) {
               <span className="rounded bg-[#1a73e8] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">Visit {vi + 1}</span>
               <span className="text-[12px] font-medium text-slate-800">{formatDate(v.steps[0]?.ts)}</span>
               <span className="inline-flex items-center gap-1 text-[12px] text-slate-600"><DevIcon className="h-3.5 w-3.5" />{s?.device?.type ? `${s.device.type} · ${s.device.browser || ''}` : 'Device unknown'}</span>
-              {s?.geo?.country && <span className="text-[12px] text-slate-600">{flag(s.geo.country)} {[s.geo.city, countryName(s.geo.country)].filter(Boolean).join(', ')}</span>}
+              {s?.geo?.country && <span className="text-[12px] text-slate-600">{flag(s.geo.country)} {[s.geo.locality, s.geo.city, countryName(s.geo.country)].filter(Boolean).join(', ')}</span>}
               <span className="ml-auto inline-flex items-center gap-3 text-[12px] text-slate-600">
                 <span>{pages} page{pages === 1 ? '' : 's'}</span>
                 {s?.durationMs != null && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{duration(s.durationMs)}</span>}
                 {s?.converted && <span className="rounded bg-[#d93025] px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Converted</span>}
-                {s?.hasReplay && websiteId && <Link href={`/recordings/${websiteId}/${v.sessionId}`} className="inline-flex items-center gap-1 rounded bg-[#1a73e8] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1765cc]"><PlayCircle className="h-3.5 w-3.5" />Watch recording</Link>}
+                {s?.hasReplay && websiteId && <WatchLink websiteId={websiteId} sessionId={v.sessionId} className="inline-flex items-center gap-1 rounded bg-[#1a73e8] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1765cc]"><PlayCircle className="h-3.5 w-3.5" />Watch recording</WatchLink>}
               </span>
             </div>
             <Road>

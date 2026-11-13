@@ -64,11 +64,11 @@ export function Pagination({ meta, onPage }) {
   const from = (meta.page - 1) * meta.limit + 1;
   const to = Math.min(meta.page * meta.limit, meta.total);
   return (
-    <div className="flex items-center justify-between border-t px-3 py-2.5 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2.5 text-[12px] text-muted-foreground sm:text-sm">
       <span>{from}–{to} of {meta.total.toLocaleString('en-IN')}</span>
       <div className="flex items-center gap-1">
         <Button variant="outline" size="icon" className="h-8 w-8" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)} aria-label="Previous page"><ChevronLeft /></Button>
-        <span className="px-2">Page {meta.page} of {meta.totalPages}</span>
+        <span className="whitespace-nowrap px-2">Page {meta.page} of {meta.totalPages}</span>
         <Button variant="outline" size="icon" className="h-8 w-8" disabled={meta.page >= meta.totalPages} onClick={() => onPage(meta.page + 1)} aria-label="Next page"><ChevronRight /></Button>
       </div>
     </div>
@@ -77,19 +77,19 @@ export function Pagination({ meta, onPage }) {
 
 export function PageHeader({ title, description, actions }) {
   return (
-    <div className="mb-3 flex flex-col gap-2 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-[17px] font-semibold text-slate-900">{title}</h1>
-        {description && <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>}
+    <div className="mb-4 flex flex-col gap-3 border-b pb-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-[16px] font-semibold leading-snug text-slate-900 sm:text-[18px]">{title}</h1>
+        {description && <p className="mt-1 break-words text-[12px] text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="page-actions flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">{actions}</div>}
     </div>
   );
 }
 
 export function StatCard({ label, value, hint, icon: Icon, tone, logo }) {
   return (
-    <div className="rounded border border-l-[3px] border-l-[hsl(var(--primary))] bg-card px-3 py-2.5">
+    <div className="rounded-md border border-l-[3px] border-l-[hsl(var(--primary))] bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{logo && <img src={logo} alt="" aria-hidden className="h-4 w-4 object-contain" />}{label}</p>
         {Icon && <Icon className={cn('h-4 w-4 text-muted-foreground', tone === 'danger' && 'text-red-500', tone === 'warning' && 'text-amber-500', tone === 'success' && 'text-emerald-600')} />}

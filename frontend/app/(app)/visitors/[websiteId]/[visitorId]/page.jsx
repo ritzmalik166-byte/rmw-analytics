@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Panel } from '@/components/analytics/Panel';
 import { Journey } from '@/components/analytics/Journey';
 import { WebsiteTag } from '@/components/analytics/WebsiteDot';
+import { WatchLink } from '@/components/analytics/RecordingModal';
 
 function Fact({ label, children }) {
   return (
@@ -28,12 +29,11 @@ function Fact({ label, children }) {
 }
 
 function RecordingRow({ r, websiteId }) {
-  const href = `/recordings/${websiteId}/${r.sessionId}`;
   return (
     <li className="flex items-center gap-3 px-3 py-2">
-      <Link href={href} aria-label="Play recording" className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></Link>
+      <WatchLink websiteId={websiteId} sessionId={r.sessionId} aria-label="Play recording" className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></WatchLink>
       <div className="min-w-0 flex-1">
-        <Link href={href} className="block text-[13px] font-medium text-slate-800 hover:underline">{formatDateTime(r.firstAt)}</Link>
+        <WatchLink websiteId={websiteId} sessionId={r.sessionId} className="block text-[13px] font-medium text-slate-800 hover:underline">{formatDateTime(r.firstAt)}</WatchLink>
         <span className="block truncate text-[11px] text-muted-foreground" title={r.pages.join(', ')}>{r.pages.length || 1} page{r.pages.length === 1 ? '' : 's'} · {r.entryPath || '—'}</span>
       </div>
       {r.converted && <Badge variant="success">Converted</Badge>}
@@ -169,8 +169,8 @@ export default function VisitorProfilePage({ params }) {
                     <TableCell className="text-right tabular-nums">{duration(s.durationMs)}</TableCell>
                     <TableCell>{s.converted ? <Badge variant="success">Converted</Badge> : s.bounced ? <Badge>Bounced</Badge> : null}</TableCell>
                     <TableCell className="w-10">{recBySession.has(s.sessionId) && (
-                      <Link href={`/recordings/${websiteId}/${s.sessionId}`} title={recBySession.get(s.sessionId).live ? 'Live now' : 'Watch recording'} aria-label="Watch recording"
-                        className={cn('flex h-7 w-7 items-center justify-center rounded-full text-white', recBySession.get(s.sessionId).live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></Link>
+                      <WatchLink websiteId={websiteId} sessionId={s.sessionId} title={recBySession.get(s.sessionId).live ? 'Live now' : 'Watch recording'} aria-label="Watch recording"
+                        className={cn('flex h-7 w-7 items-center justify-center rounded-full text-white', recBySession.get(s.sessionId).live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-4 w-4" /></WatchLink>
                     )}</TableCell>
                   </TableRow>
                 ))}

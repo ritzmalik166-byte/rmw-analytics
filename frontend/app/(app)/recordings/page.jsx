@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RangePicker } from '@/components/analytics/RangePicker';
+import { WatchLink } from '@/components/analytics/RecordingModal';
 
 const DEVICE_ICON = { mobile: Smartphone, tablet: Tablet, desktop: Monitor };
 
@@ -88,14 +89,13 @@ export default function RecordingsPage() {
             <TableBody>
               {data.rows.map((r) => {
                 const Dev = DEVICE_ICON[r.device?.type] || Monitor;
-                const href = `/recordings/${r.websiteId}/${r.sessionId}`;
                 return (
                   <TableRow key={`${r.websiteId}:${r.sessionId}`}>
                     <TableCell className="w-10">
-                      <Link href={href} aria-label="Play recording" className={cn('flex h-9 w-9 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-5 w-5" /></Link>
+                      <WatchLink websiteId={r.websiteId} sessionId={r.sessionId} aria-label="Play recording" className={cn('flex h-9 w-9 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-5 w-5" /></WatchLink>
                     </TableCell>
                     <TableCell>
-                      <Link href={href} className="font-semibold text-slate-900 hover:underline">{r.visitorLabel}</Link>
+                      <WatchLink websiteId={r.websiteId} sessionId={r.sessionId} className="font-semibold text-slate-900 hover:underline">{r.visitorLabel}</WatchLink>
                       <span className="ml-1.5 rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600">{r.website?.code}</span>
                       {r.live && <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-[#d93025] px-1.5 text-[10px] font-bold uppercase text-white"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />Live</span>}
                       {r.converted && <span className="ml-1.5 rounded bg-[#188038] px-1.5 text-[10px] font-bold uppercase text-white">Converted</span>}

@@ -18,14 +18,14 @@ export function Panel({ title, subtitle, tabs, tab, onTab, href, hrefLabel = 'Vi
   const link = href ? withView(href, linkQuery) : null;
   return (
     <Card className={cn('flex flex-col overflow-hidden', className)}>
-      <div className="flex min-h-[38px] items-center justify-between gap-2 border-b bg-[hsl(214_25%_97%)] px-3 py-1.5">
+      <div className="flex min-h-[38px] flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b bg-[hsl(214_25%_97%)] px-3 py-1.5">
         <div className="min-w-0">
           <h3 className="text-[12px] font-semibold uppercase tracking-wide text-slate-600">{title}</h3>
           {subtitle && <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex max-w-full items-center gap-1 overflow-x-auto [scrollbar-width:none]">
           {tabs?.map((t) => (
-            <button key={t.key} onClick={() => onTab(t.key)} className={cn('rounded px-2 py-0.5 text-[11px] font-medium', tab === t.key ? 'bg-white text-[hsl(var(--primary))] ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800')}>{t.label}</button>
+            <button key={t.key} onClick={() => onTab(t.key)} className={cn('shrink-0 whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition-colors', tab === t.key ? 'bg-white text-[hsl(var(--primary))] ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800')}>{t.label}</button>
           ))}
           {actions}
           {link && <Link href={link} className="ml-1 text-[11px] text-muted-foreground hover:text-foreground">{hrefLabel}</Link>}

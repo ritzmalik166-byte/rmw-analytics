@@ -16,6 +16,7 @@ import { Card } from '@/components/ui/card';
 import { Select } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { WatchLink } from '@/components/analytics/RecordingModal';
 
 export const PAGE_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -30,10 +31,10 @@ const PAGE_SIZE = 25;
 
 export function PageTabBar({ tab, onTab }) {
   return (
-    <div className="mb-4 flex overflow-x-auto border-b [scrollbar-width:none]" role="tablist">
+    <div className="-mx-3 mb-4 flex overflow-x-auto border-b px-3 [scrollbar-width:none] sm:mx-0 sm:px-0" role="tablist">
       {PAGE_TABS.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => onTab(t.key)}
-          className={cn('-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2.5 text-[13px] font-medium',
+          className={cn('-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors sm:px-4',
             tab === t.key ? 'border-[hsl(var(--primary))] text-[hsl(var(--primary))]' : 'border-transparent text-slate-600 hover:text-slate-900')}>
           {t.icon && <t.icon className="h-4 w-4" />}{t.label}
         </button>
@@ -60,7 +61,7 @@ function Where({ device, city, country }) {
 }
 function Watch({ row }) {
   if (!row.hasRecording) return <span className="text-[11px] text-muted-foreground">—</span>;
-  return <Link href={`/recordings/${row.websiteId}/${row.sessionId}`} className="inline-flex items-center gap-1 rounded-full bg-[#1a73e8] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#1765cc]"><PlayCircle className="h-3.5 w-3.5" />Watch</Link>;
+  return <WatchLink websiteId={row.websiteId} sessionId={row.sessionId} className="inline-flex items-center gap-1 rounded-full bg-[#1a73e8] px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-[#1765cc] hover:shadow"><PlayCircle className="h-3.5 w-3.5" />Watch</WatchLink>;
 }
 function Frame({ loading, error, refetch, empty, cols, children, meta, onPage, toolbar, icon }) {
   return (
@@ -176,11 +177,10 @@ export function PageRecordings({ path }) {
         <TableHeader><TableRow><TableHead /><TableHead>Visitor</TableHead><TableHead>Started</TableHead><TableHead>Ended</TableHead><TableHead className="text-right">Length</TableHead><TableHead>Pages seen</TableHead><TableHead>Device / location</TableHead><TableHead>Came from</TableHead></TableRow></TableHeader>
         <TableBody>
           {data?.rows?.map((r) => {
-            const href = `/recordings/${r.websiteId}/${r.sessionId}`;
             return (
               <TableRow key={`${r.websiteId}:${r.sessionId}`}>
-                <TableCell className="w-10"><Link href={href} aria-label="Play recording" className={cn('flex h-9 w-9 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-5 w-5" /></Link></TableCell>
-                <TableCell><Link href={href} className="font-semibold hover:underline">{r.visitorLabel}</Link>{r.live && <span className="ml-1.5 rounded bg-[#d93025] px-1.5 text-[10px] font-bold uppercase text-white">Live</span>}{r.converted && <span className="ml-1.5 rounded bg-[#188038] px-1.5 text-[10px] font-bold uppercase text-white">Converted</span>}</TableCell>
+                <TableCell className="w-10"><WatchLink websiteId={r.websiteId} sessionId={r.sessionId} aria-label="Play recording" className={cn('flex h-9 w-9 items-center justify-center rounded-full text-white shadow', r.live ? 'bg-[#d93025]' : 'bg-[#1a73e8] hover:bg-[#1765cc]')}><PlayCircle className="h-5 w-5" /></WatchLink></TableCell>
+                <TableCell><WatchLink websiteId={r.websiteId} sessionId={r.sessionId} className="font-semibold hover:underline">{r.visitorLabel}</WatchLink>{r.live && <span className="ml-1.5 rounded bg-[#d93025] px-1.5 text-[10px] font-bold uppercase text-white">Live</span>}{r.converted && <span className="ml-1.5 rounded bg-[#188038] px-1.5 text-[10px] font-bold uppercase text-white">Converted</span>}</TableCell>
                 <TableCell><When at={r.firstAt} /></TableCell>
                 <TableCell className="whitespace-nowrap text-[12px]">{formatDateTime(r.lastAt)}</TableCell>
                 <TableCell className="text-right tabular-nums">{duration(r.durationMs)}</TableCell>

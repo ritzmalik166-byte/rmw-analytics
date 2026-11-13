@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-const Card = React.forwardRef(({ className, ...props }, ref) => <div ref={ref} className={cn('rounded border bg-card text-card-foreground', className)} {...props} />);
+const Card = React.forwardRef(({ className, ...props }, ref) => <div ref={ref} className={cn('rounded-md border bg-card text-card-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)]', className)} {...props} />);
 Card.displayName = 'Card';
 const CardHeader = React.forwardRef(({ className, ...props }, ref) => <div ref={ref} className={cn('flex flex-col space-y-1 border-b bg-[hsl(214_25%_97%)] px-4 py-2.5', className)} {...props} />);
 CardHeader.displayName = 'CardHeader';

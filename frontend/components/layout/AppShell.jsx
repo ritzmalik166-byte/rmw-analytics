@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PageSkeleton, Skeleton } from '@/components/ui/feedback';
 import { WebsiteDot } from '@/components/analytics/WebsiteDot';
 import { isMpfSite } from '@/lib/mpfLandingPages';
+import { RecordingModalProvider } from '@/components/analytics/RecordingModal';
 
 /**
  * Navigation follows the questions a website owner asks: who visits (Visitors), where from (Traffic),
@@ -111,7 +112,7 @@ function WebsiteSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex h-8 max-w-[220px] items-center gap-2 rounded border border-white/25 bg-white/10 px-2.5 text-[12px] font-medium hover:bg-white/15" aria-label="Select website">
+        <button className="flex h-8 max-w-[150px] items-center gap-2 rounded-md border border-white/25 bg-white/10 px-2.5 text-[12px] font-medium transition-colors hover:bg-white/20 sm:max-w-[240px]" aria-label="Select website">
           {current ? <WebsiteDot website={current} /> : <Globe2 className="h-3.5 w-3.5" />}
           <span className="truncate">{current ? current.name : 'All websites'}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
@@ -196,7 +197,15 @@ function Shell({ children }) {
   const [pendingHref, setPendingHref] = useState(null);
   const inMore = NAV.find((g) => g.collapsible)?.items.some((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
   const [moreOpen, setMoreOpen] = useState(Boolean(inMore));
-  useEffect(() => { setPendingHref(null); if (inMore) setMoreOpen(true); }, [pathname, inMore]);
+  useEffect(() => { setPendingHref(null); setOpen(false); if (inMore) setMoreOpen(true); }, [pathname, inMore]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', onKey); };
+  }, [open]);
   // Keep the selected website, dates and filters when moving between reports.
   const hrefFor = (href) => (PLAIN.includes(href) ? href : withView(href, linkQuery));
   const navigate = (href) => (e) => { setOpen(false); if (isPlainClick(e) && href !== pathname) setPendingHref(href); };
@@ -204,9 +213,9 @@ function Shell({ children }) {
 
   const sidebar = (
     <nav className="flex h-full flex-col bg-white">
-      <div className="flex-1 overflow-y-auto py-2">
+      <div className="nav-scroll flex-1 overflow-y-auto py-2">
         {NAV.map((group, gi) => (
-          <div key={group.title || `g${gi}`} className={cn('mb-1', !group.title && gi > 0 && 'mt-2 border-t pt-1')}>
+          <div key={group.title || `g${gi}`} className={cn('mb-1', !group.title && gi > 0 && 'mx-3 mt-2 border-t pt-1')}>
             {group.title && (group.collapsible ? (
               <button onClick={() => setMoreOpen((v) => !v)} className="flex w-full items-center gap-1 px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 hover:text-slate-700" aria-expanded={moreOpen}>
                 <ChevronRight className={cn('h-3 w-3 transition-transform', moreOpen && 'rotate-90')} />{group.title}
@@ -217,11 +226,11 @@ function Shell({ children }) {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <li key={item.href}>
-                    <Link href={hrefFor(item.href)} onClick={navigate(item.href)} className={cn('relative flex items-center gap-2.5 px-4 py-[7px] text-[13px] transition-colors',
-                      active ? 'bg-[hsl(213_70%_95%)] font-semibold text-[hsl(var(--primary))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[hsl(var(--primary))]' : 'text-slate-700 hover:bg-slate-50')}>
-                      <item.icon className="h-4 w-4 shrink-0" />
+                    <Link href={hrefFor(item.href)} onClick={navigate(item.href)} aria-current={active ? 'page' : undefined} className={cn('group relative mx-2 flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-all duration-150',
+                      active ? 'bg-[hsl(213_70%_95%)] font-semibold text-[hsl(var(--primary))] before:absolute before:inset-y-1.5 before:-left-2 before:w-[3px] before:rounded-r before:bg-[hsl(var(--primary))]' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900')}>
+                      <item.icon className={cn('h-4 w-4 shrink-0 transition-colors', active ? 'text-[hsl(var(--primary))]' : 'text-slate-500 group-hover:text-slate-700')} />
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.live && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                      {item.live && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />}
                     </Link>
                   </li>
                 );
@@ -235,19 +244,20 @@ function Shell({ children }) {
   );
 
   return (
+    <RecordingModalProvider>
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 bg-[hsl(var(--primary))] text-white">
+      <header className="sticky top-0 z-30 bg-[hsl(var(--primary))] text-white shadow-[0_1px_8px_rgba(15,23,42,0.18)]">
         <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
-          <button className="rounded p-1 hover:bg-white/10 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
-          <Link href="/overview" className="flex items-center gap-2">
+          <button className="-ml-1 rounded-md p-1.5 hover:bg-white/10 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><Menu className="h-5 w-5" /></button>
+          <Link href="/overview" className="flex shrink-0 items-center gap-2">
             <img src="/rmw-mark.png" alt="Ritz Media World" className="h-8 w-8 rounded-sm bg-white object-contain p-0.5" />
             <span className="hidden leading-tight sm:block">
               <span className="block text-[13px] font-semibold">RMW Analytics</span>
               <span className="block text-[10px] text-white/70">Ritz Media World Group · Visitor Intelligence</span>
             </span>
           </Link>
-          <div className="ml-2 sm:ml-4"><WebsiteSwitcher /></div>
-          <div className="ml-auto flex items-center gap-1.5 [&_button]:text-white [&_button:hover]:bg-white/10">
+          <div className="ml-1 min-w-0 sm:ml-4"><WebsiteSwitcher /></div>
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5 [&_button]:text-white [&_button:hover]:bg-white/10">
             <LiveCount />
             <AlertBell />
             <DropdownMenu>
@@ -286,27 +296,27 @@ function Shell({ children }) {
         <div className="h-[3px] bg-[hsl(var(--saffron))]" />
       </header>
 
-      <aside className="fixed bottom-0 left-0 top-[51px] z-20 hidden w-56 border-r lg:block">{sidebar}</aside>
-      {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 shadow-xl">
-            <div className="flex h-12 items-center justify-between bg-[hsl(var(--primary))] px-4 text-white">
-              <span className="text-[13px] font-semibold">RMW Analytics</span>
-              <button onClick={() => setOpen(false)} aria-label="Close menu"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="h-[calc(100%-3rem)]">{sidebar}</div>
-          </aside>
-        </div>
-      )}
+      <aside className="fixed bottom-0 left-0 top-[51px] z-20 hidden w-56 border-r bg-white lg:block">{sidebar}</aside>
+      <div className={cn('fixed inset-0 z-40 lg:hidden', !open && 'pointer-events-none')} aria-hidden={!open}>
+        <div className={cn('absolute inset-0 bg-slate-950/40 transition-opacity duration-200', open ? 'opacity-100' : 'opacity-0')} onClick={() => setOpen(false)} />
+        <aside className={cn('absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col shadow-2xl transition-transform duration-300 ease-out', open ? 'translate-x-0' : '-translate-x-full')} role="dialog" aria-label="Navigation">
+          <div className="flex h-12 shrink-0 items-center justify-between bg-[hsl(var(--primary))] px-4 text-white">
+            <span className="flex items-center gap-2 text-[13px] font-semibold"><img src="/rmw-mark.png" alt="" className="h-7 w-7 rounded-sm bg-white object-contain p-0.5" />RMW Analytics</span>
+            <button className="rounded-md p-1.5 hover:bg-white/10" onClick={() => setOpen(false)} aria-label="Close menu"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="h-[3px] shrink-0 bg-[hsl(var(--saffron))]" />
+          <div className="min-h-0 flex-1">{sidebar}</div>
+        </aside>
+      </div>
       <div className="lg:pl-56">
-        <main className="mx-auto max-w-[1500px] p-4 sm:p-6">
+        <main className="app-main mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-6">
           {showFilters && !pendingHref && <FilterBar />}
           {pendingHref ? (pendingHref.startsWith('/overview') ? <DashboardSkeleton /> : <PageSkeleton />) : children}
         </main>
       </div>
       <LogoutDialog open={logoutOpen} onOpenChange={setLogoutOpen} />
     </div>
+    </RecordingModalProvider>
   );
 }
 
