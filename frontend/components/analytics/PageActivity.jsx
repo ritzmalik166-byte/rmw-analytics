@@ -131,23 +131,32 @@ export function PageClicks({ path }) {
   const { data, isLoading, error, refetch } = useStats('/stats/page/clicks', { path, kind, page, limit: PAGE_SIZE });
   const toolbar = (
     <Select className="w-56" value={kind} onChange={(e) => { setKind(e.target.value); setPage(1); }} aria-label="Type of action">
-      <option value="all">All clicks & actions</option>
+      <option value="all">All people who clicked</option>
       <option value="contact">Call / WhatsApp / email taps</option>
       <option value="forms">Form activity & leads</option>
       <option value="frustration">Frustrated clicks (rage / dead)</option>
     </Select>
   );
   return (
-    <Frame loading={isLoading && !data} error={error} refetch={refetch} cols={5} icon={MousePointerClick} toolbar={toolbar} empty={!data?.rows?.length && 'No clicks recorded on this page in this period'} meta={data?.meta} onPage={setPage}>
+    <Frame loading={isLoading && !data} error={error} refetch={refetch} cols={6} icon={MousePointerClick} toolbar={toolbar} empty={!data?.rows?.length && 'No genuine visitor clicked anything on this page in this period'} meta={data?.meta} onPage={setPage}>
       <Table>
-        <TableHeader><TableRow><TableHead>When</TableHead><TableHead>What they did</TableHead><TableHead>Visitor</TableHead><TableHead>Device / location</TableHead><TableHead>Recording</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>Visitor</TableHead><TableHead>Last click</TableHead><TableHead>What they clicked</TableHead><TableHead className="text-right">Clicks</TableHead><TableHead>Device / location</TableHead><TableHead>Recording</TableHead></TableRow></TableHeader>
         <TableBody>
           {data?.rows?.map((r, i) => (
-            <TableRow key={`${r.sessionId}-${r.at}-${i}`}>
-              <TableCell><When at={r.at} /></TableCell>
-              <TableCell className="max-w-[360px]"><span className="block truncate font-medium" title={r.label}>{r.label}</span>{r.selector && <span className="block truncate font-mono text-[11px] text-muted-foreground" title={r.selector}>{r.selector}</span>}</TableCell>
+            <TableRow key={`${r.websiteId}-${r.visitorId || i}`}>
               <TableCell><Who row={r} /></TableCell>
-              <TableCell><Where device={r.device} city={r.city} country={r.country} /></TableCell>
+              <TableCell><When at={r.at} /></TableCell>
+              <TableCell className="max-w-[380px]">
+                <span className="block truncate font-medium" title={r.label}>{r.label}</span>
+                {r.actions?.length > 1 && (
+                  <span className="mt-1 flex flex-wrap gap-1">
+                    {r.actions.filter((a) => a !== r.label).slice(0, 4).map((a) => <span key={a} className="max-w-[180px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600" title={a}>{a}</span>)}
+                    {(r.actions.length - 5 + (r.moreActions || 0)) > 0 && <span className="text-[11px] text-muted-foreground">+{r.actions.length - 5 + (r.moreActions || 0)} more</span>}
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{num(r.clicks || 1)}</TableCell>
+              <TableCell><Where device={r.device} city={r.locality ? `${r.locality}, ${r.city || ''}`.replace(/, $/, '') : r.city} country={r.country} /></TableCell>
               <TableCell><Watch row={r} /></TableCell>
             </TableRow>
           ))}
