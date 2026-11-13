@@ -18,6 +18,7 @@ import { subscribe, activeVisitors } from '../services/realtime.js';
 import { invalidateGoals } from '../services/ingest/ingestService.js';
 import { audit } from '../services/auditService.js';
 import * as replays from '../services/replayService.js';
+import * as pageActivity from '../services/pageActivityService.js';
 import { insights } from '../services/insightsService.js';
 import { explore, pathExplore, catalog as exploreCatalog } from '../services/exploreService.js';
 import * as explorations from '../services/explorationService.js';
@@ -31,7 +32,7 @@ const DIMS = ['channel', 'source', 'referrer', 'utm_source', 'utm_medium', 'utm_
 // ─── Session recordings ────────────────────────────────────────────────────
 router.get('/replays', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
   const p = parsePagination(req.query);
-  const r = await replays.listReplays(req.scope, { ...p, status: req.query.live === 'true' ? 'live' : ['live', 'completed', 'all'].includes(req.query.status) ? req.query.status : 'completed', minSeconds: Number(req.query.min_seconds) || 0, visitorId: req.query.visitor || undefined });
+  const r = await replays.listReplays(req.scope, { ...p, status: req.query.live === 'true' ? 'live' : ['live', 'completed', 'all'].includes(req.query.status) ? req.query.status : 'completed', minSeconds: Number(req.query.min_seconds) || 0, visitorId: req.query.visitor || undefined, path: typeof req.query.path === 'string' ? req.query.path : undefined, pathExact: req.query.path_exact === 'true' });
   ok(res, { rows: r.rows, meta: pageMeta(r.page, r.limit, r.total) });
 }));
 router.get('/replays/:websiteId/:sessionId', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
@@ -53,6 +54,15 @@ router.get('/stats/pages', read, resolveScope, asyncHandler(async (req, res) => 
 router.get('/stats/page', read, resolveScope, asyncHandler(async (req, res) => {
   if (!req.query.path) throw badRequest('path is required');
   ok(res, await stats.pageDetail(req.scope, String(req.query.path).slice(0, 500)));
+}));
+// Per-page activity lists (page detail tabs): visits, visitors and clicks on one page, newest first.
+router.get('/stats/page/:list(visits|visitors|clicks)', requirePermission('visitors:read'), resolveScope, asyncHandler(async (req, res) => {
+  if (!req.query.path) throw badRequest('path is required');
+  const path = String(req.query.path).slice(0, 500);
+  const p = parsePagination(req.query);
+  const fn = { visits: pageActivity.pageVisits, visitors: pageActivity.pageVisitors, clicks: pageActivity.pageClicks }[req.params.list];
+  const r = await fn(req.scope, path, { ...p, kind: String(req.query.kind || 'all') });
+  ok(res, { rows: r.rows, meta: pageMeta(r.page, r.limit, r.total) });
 }));
 router.get('/stats/insights', read, resolveScope, asyncHandler(async (req, res) => ok(res, await insights(req.scope))));
 router.get('/stats/clicks', read, resolveScope, asyncHandler(async (req, res) => ok(res, await stats.clicks(req.scope, { kind: String(req.query.kind || 'all') }))));

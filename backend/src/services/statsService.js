@@ -208,11 +208,11 @@ export async function pages(scope, { q, limit = 100, sort = 'pageviews', order =
   const { websiteIds, range } = scope;
   const sortKey = ['pageviews', 'visitors', 'entries', 'exits', 'avgTimeMs'].includes(sort) ? sort : 'pageviews';
   const dir = order === 'asc' ? 1 : -1;
-  const cap = Math.min(500, limit);
+  const cap = Math.min(2000, limit);
   const rows = hasFilters(scope.filters) || range.partial
     ? await filteredPages(scope, { q, sortKey, dir, cap })
     : await col('aggDailyPages').aggregate([
-      { $match: { websiteId: { $in: websiteIds }, day: { $gte: range.fromDay, $lte: range.toDay }, ...(q ? { path: { $regex: escapeRegex(q), $options: 'i' } } : {}) } },
+      { $match: { websiteId: { $in: websiteIds }, day: { $gte: range.fromDay, $lte: range.toDay }, ...(q ? { $and: [{ $or: [{ path: { $regex: escapeRegex(q), $options: 'i' } }, { title: { $regex: escapeRegex(q), $options: 'i' } }] }] } : {}) } },
       { $group: { _id: '$path', title: { $last: '$title' }, pageviews: { $sum: '$pageviews' }, visitors: { $sum: '$visitors' }, entries: { $sum: '$entries' }, exits: { $sum: '$exits' }, engagedMs: { $sum: '$engagedMs' }, scrollSum: { $sum: '$scrollSum' } } },
       { $addFields: { avgTimeMs: { $cond: [{ $gt: ['$pageviews', 0] }, { $divide: ['$engagedMs', '$pageviews'] }, 0] } } },
       // Ascending ("least visited") skips pages nobody entered/exited from when sorting by those columns.
@@ -232,7 +232,7 @@ async function filteredPages(scope, { q, sortKey, dir, cap }) {
   const extra = await sessionClause(scope, range.from, range.to);
   const [views, entryExit] = await Promise.all([
     col('pageViews').aggregate([
-      { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...extra, ...(q ? { path: { $regex: escapeRegex(q), $options: 'i' } } : {}) } },
+      { $match: { websiteId: { $in: websiteIds }, ts: { $gte: range.from, $lte: range.to }, ...extra, ...(q ? { $and: [{ $or: [{ path: { $regex: escapeRegex(q), $options: 'i' } }, { title: { $regex: escapeRegex(q), $options: 'i' } }] }] } : {}) } },
       { $group: { _id: { p: '$path', v: '$visitorId' }, pv: { $sum: 1 }, engagedMs: { $sum: '$engagedMs' }, scroll: { $sum: '$maxScroll' }, title: { $last: '$title' } } },
       { $group: { _id: '$_id.p', pageviews: { $sum: '$pv' }, visitors: { $sum: 1 }, engagedMs: { $sum: '$engagedMs' }, scrollSum: { $sum: '$scroll' }, title: { $last: '$title' } } },
     ], { allowDiskUse: true }).toArray(),

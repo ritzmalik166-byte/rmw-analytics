@@ -66,6 +66,13 @@ test('replay: chunks are stored, listed and fetched incrementally (live)', async
   assert.deepEqual(row.pages, ['/pricing?x=1']);
   assert.equal(row.durationMs, 4000);
 
+  // Page filter: case-insensitive "contains", regex characters treated literally.
+  assert.equal((await owner.get('/replays?live=true&path=PRICING')).data.rows.length, 1, 'matches a page the recording covered');
+  assert.equal((await owner.get('/replays?live=true&path=checkout')).data.rows.length, 0, 'excludes recordings that never visited the page');
+  assert.equal((await owner.get(`/replays?live=true&path=${encodeURIComponent('pric.ng')}`)).data.rows.length, 0, '"." is literal, not a wildcard');
+  assert.equal((await owner.get(`/replays?live=true&path_exact=true&path=${encodeURIComponent('/pricing')}`)).data.rows.length, 1, 'exact: same page with a query string matches');
+  assert.equal((await owner.get(`/replays?live=true&path_exact=true&path=${encodeURIComponent('/')}`)).data.rows.length, 0, 'exact: "/" does not match every page');
+
   const full = await owner.get(`/replays/${site.id}/${SID}`);
   assert.equal(full.status, 200);
   assert.deepEqual(full.data.chunks.map((c) => c.seq), [0, 1]);

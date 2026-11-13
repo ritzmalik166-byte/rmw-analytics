@@ -74,10 +74,17 @@ async function sessionsFor(rows) {
  * status: 'live' (still recording), 'completed' (visitor finished — no new chunk for LIVE_MS), 'all'.
  * A visitor filter lists every recording of that visitor regardless of the date range.
  */
-export async function listReplays({ websiteIds, websites, range }, { status = 'completed', minSeconds, visitorId, page, limit, skip }) {
+export async function listReplays({ websiteIds, websites, range }, { status = 'completed', minSeconds, visitorId, path: pathContains, pathExact, page, limit, skip }) {
   const liveCutoff = new Date(Date.now() - LIVE_MS);
   const filter = { websiteId: { $in: websiteIds } };
   if (visitorId) filter.visitorId = String(visitorId);
+  // Recordings that covered a page whose path contains this text (e.g. a landing page slug). Case-insensitive.
+  const p = String(pathContains || '').trim().slice(0, 200);
+  if (p) {
+    const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // exact: this page only (pages are stored as path + query string, so allow "?utm=…" after it).
+    filter.pages = pathExact ? { $regex: `^${esc}(\\?|$)` } : { $regex: esc, $options: 'i' };
+  }
   else { filter.firstAt = { $lte: range.to }; filter.lastAt = { $gte: range.from }; }
   // A recording belongs to the period when it overlaps it (an in-progress recording's lastAt is ~now).
   if (status === 'live') filter.lastAt = { $gte: liveCutoff };
