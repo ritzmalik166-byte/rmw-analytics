@@ -37,6 +37,9 @@ export const contextSchema = z.object({
   online: z.boolean().optional(),
   consent: z.enum(['granted', 'denied', 'unknown']).optional(),
   cookieless: z.boolean().optional(),
+  lat: z.number().min(-90).max(90).optional(),   // device GPS (only when the visitor allowed location)
+  lon: z.number().min(-180).max(180).optional(),
+  acc: z.number().min(0).max(100000).optional(), // GPS accuracy in metres
   ua: str(512).optional(), // honoured only for server-side (secret-key) ingestion
   ip: str(64).optional(),  // honoured only for server-side (secret-key) ingestion
 }).strict();

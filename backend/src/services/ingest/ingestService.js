@@ -3,6 +3,7 @@ import { col } from '../../config/db.js';
 import { logger } from '../../config/logger.js';
 import { parseDevice } from '../../utils/ua.js';
 import { lookupGeo } from '../../utils/geo.js';
+import { preciseGeo } from '../../utils/reverseGeocode.js';
 import { encryptJson, lookupHash, encrypt } from '../../utils/crypto.js';
 import { globToRegex } from '../../utils/http.js';
 import { DAY_MS } from '../../utils/dates.js';
@@ -83,7 +84,10 @@ export async function ingestBatch({ website, batch, req, ip, ua, now = Date.now(
   // Correct client clock skew using the batch send time (offline-queued events keep their relative order).
   const offsetMs = batch.sentAt && Math.abs(now - batch.sentAt) > 2000 ? now - batch.sentAt : 0;
   const device = parseDevice(ua, { screenWidth: ctx.sw });
-  const geo = await lookupGeo(req, ip);
+  const ipGeo = await lookupGeo(req, ip);
+  // Device GPS (when allowed) beats IP: IP only resolves to the ISP hub, not where the visitor actually is.
+  const gpsGeo = await preciseGeo(ctx.lat, ctx.lon, ctx.acc);
+  const geo = gpsGeo ? { ...gpsGeo, country: gpsGeo.country || ipGeo.country } : { ...ipGeo, source: 'ip' };
   const expireAt = new Date(now + settings.retentionDays * DAY_MS);
   const wid = website._id;
 
@@ -131,12 +135,12 @@ export async function ingestBatch({ website, batch, req, ip, ua, now = Date.now(
     {
       $setOnInsert: {
         websiteId: wid, sessionId: ctx.sid, visitorId: ctx.vid, entryPath: landing.page.path, entryTitle: landing.page.title,
-        ...attribution, device: deviceFull, geo, lang: ctx.lang || null, tz: ctx.tz || null, isNew: newVisitor || Boolean(byName('session_start')[0]?.props?.isNew), converted: false,
+        ...attribution, device: deviceFull, ...(gpsGeo ? {} : { geo }), lang: ctx.lang || null, tz: ctx.tz || null, isNew: newVisitor || Boolean(byName('session_start')[0]?.props?.isNew), converted: false,
       },
       $min: { startedAt: first.ts },
       $max: { lastSeenAt: last.ts },
       $inc: { pageviews: pageViews.length, events: fresh.length, activeMs, searches: searches.length },
-      $set: { expireAt, ...(pageViews.length ? { exitPath: pageViews.at(-1).page.path } : {}) },
+      $set: { expireAt, ...(pageViews.length ? { exitPath: pageViews.at(-1).page.path } : {}), ...(gpsGeo ? { geo } : {}) },
     },
     { upsert: true },
   );

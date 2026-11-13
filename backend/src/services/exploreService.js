@@ -32,6 +32,7 @@ export const DIMENSIONS = {
   country: { label: 'Country', engines: ['sessions', 'events'] },
   region: { label: 'State / region', engines: ['sessions', 'events'] },
   city: { label: 'City', engines: ['sessions', 'events'] },
+  locality: { label: 'Locality', engines: ['sessions', 'events'] },
   device: { label: 'Device', engines: ['sessions', 'events'] },
   browser: { label: 'Browser', engines: ['sessions', 'events'] },
   os: { label: 'Operating system', engines: ['sessions', 'events'] },
@@ -77,6 +78,7 @@ function sessionDimExpr(d, tz) {
     case 'country': return unknown('$geo.country');
     case 'region': return unknown('$geo.region');
     case 'city': return unknown('$geo.city');
+    case 'locality': return unknown('$geo.locality');
     case 'device': return unknown('$device.type');
     case 'browser': return unknown('$device.browser');
     case 'os': return unknown('$device.os');
@@ -93,6 +95,7 @@ function eventDimExpr(d, tz) {
     case 'country': return unknown('$geo.country');
     case 'region': return unknown('$geo.region');
     case 'city': return unknown('$geo.city');
+    case 'locality': return unknown('$geo.locality');
     case 'device': return unknown('$device.type');
     case 'browser': return unknown('$device.browser');
     case 'os': return unknown('$device.os');

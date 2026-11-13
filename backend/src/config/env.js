@@ -56,6 +56,9 @@ const schema = z.object({
   INGEST_ALLOW_MISSING_ORIGIN: bool(true),
 
   GEOIP_DB_PATH: z.string().optional(),
+  // Reverse geocoding of visitor GPS → locality/city. Google if a key is set, else OpenStreetMap Nominatim.
+  GOOGLE_MAPS_GEOCODING_API_KEY: z.string().optional(),
+  REVERSE_GEOCODE_ENABLED: bool(true),
 
   RUN_JOBS_IN_PROCESS: bool(true),
   ROLLUP_INTERVAL_SECONDS: int(60),

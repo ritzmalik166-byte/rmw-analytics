@@ -64,6 +64,40 @@ export function createTracker(win, opts) {
   const whenReady = [];
   const log = (...a) => { if (debug && win.console) win.console.log('[analytics]', ...a); };
 
+  // ─── precise location (browser GPS) ───
+  // IP geolocation only knows the ISP hub (e.g. Noida traffic shows as "Gharoli"). When the visitor has allowed
+  // location for this site we attach device coordinates; the server reverse-geocodes them to locality/city.
+  const GPS_KEY = 'rmwa_gps';
+  const GPS_TTL = 30 * 60000;
+  let gps = null;
+  try { const c = JSON.parse((ls && ls.get(GPS_KEY)) || 'null'); if (c && now() - c.t < GPS_TTL) gps = c; } catch (e) { /* ignore */ }
+  let gpsAsked = false;
+  const readGps = () => {
+    const g = win.navigator && win.navigator.geolocation;
+    if (gpsAsked || !g) return;
+    gpsAsked = true;
+    try {
+      g.getCurrentPosition((pos) => {
+        const r = (n) => Math.round(n * 1e5) / 1e5;
+        gps = { lat: r(pos.coords.latitude), lon: r(pos.coords.longitude), acc: Math.min(100000, Math.round(pos.coords.accuracy || 0)), t: now() };
+        try { if (ls) ls.set(GPS_KEY, JSON.stringify(gps)); } catch (e) { /* ignore */ }
+      }, () => {}, { enableHighAccuracy: true, timeout: 12000, maximumAge: 600000 });
+    } catch (e) { /* ignore */ }
+  };
+  if (!gps && opts.geo !== 'off') {
+    // Already granted (e.g. the site itself asked earlier) → read silently, no prompt.
+    try {
+      if (win.navigator.permissions) {
+        win.navigator.permissions.query({ name: 'geolocation' }).then((st) => { if (st.state === 'granted') readGps(); }).catch(() => {});
+      }
+    } catch (e) { /* ignore */ }
+    // data-geo="prompt": ask on the first user interaction, like MPF's lead tracker.
+    if (opts.geo === 'prompt') {
+      const once = () => { ['click', 'touchstart', 'scroll', 'keydown'].forEach((ev) => win.removeEventListener(ev, once, true)); readGps(); };
+      ['click', 'touchstart', 'scroll', 'keydown'].forEach((ev) => win.addEventListener(ev, once, { capture: true, passive: true }));
+    }
+  }
+
   const consentAllows = () => cfg.consentMode !== 'opt-in' || consent === 'granted';
   const endpoint = `${opts.api.replace(/\/$/, '')}/api/v1/events`;
   const queue = createQueue({
@@ -81,6 +115,7 @@ export function createTracker(win, opts) {
       const px = (n) => Math.max(0, Math.min(20000, Math.round(n || 0)));
       const ctx = { vid: v, sid: s, lang: clip(win.navigator.language || '', 35), sw: px(sc.width), sh: px(sc.height), vw: px(win.innerWidth), vh: px(win.innerHeight), online: win.navigator.onLine !== false, consent: cfg.consentMode === 'none' ? 'unknown' : consent, cookieless: ids.mode !== 'local' };
       if (tz) ctx.tz = clip(tz, 64);
+      if (gps) { ctx.lat = gps.lat; ctx.lon = gps.lon; ctx.acc = gps.acc; }
       return ctx;
     },
   });
@@ -262,6 +297,7 @@ export function boot(win) {
     disable: list(attr('data-auto')).filter((s) => s.indexOf('no-') === 0),
     searchParams: list(attr('data-search-params')),
     debug: attr('data-debug') === 'true',
+    geo: attr('data-geo') || undefined, // 'prompt' | 'off' | default: use GPS only if already permitted
   });
   win.__rmwa = tracker;
   const stub = win.analytics;
