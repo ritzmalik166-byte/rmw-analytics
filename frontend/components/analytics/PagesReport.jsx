@@ -35,7 +35,7 @@ export function PagesReport({ mode = 'pages' }) {
       <PageHeader title={m.title} description={`${m.description} · ${current ? current.name : 'All websites'} · ${rangeLabel}`} actions={<><RangePicker /><ExportButton type="pages" /></>} />
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-          <div className="relative w-full max-w-xs"><Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" /><Input className="pl-8" placeholder="Find a page, e.g. /contact" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="relative w-full max-w-xs"><Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" /><Input className="pl-8" placeholder="Find a page by address or name, e.g. Eldeco" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <Select className="w-48" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort by">{SORTS.map(([k, l]) => <option key={k} value={k}>Sort by {l.toLowerCase()}</option>)}</Select>
           <div className="flex rounded border text-[12px]" role="group" aria-label="Order">
             {[['desc', 'Most'], ['asc', 'Least']].map(([k, l]) => <button key={k} onClick={() => setOrder(k)} className={cn('px-2.5 py-1', order === k ? 'bg-[hsl(var(--primary))] text-white' : 'text-slate-600 hover:bg-slate-50')}>{l}</button>)}
@@ -57,6 +57,11 @@ export function PagesReport({ mode = 'pages' }) {
                       <span className="absolute inset-y-1 left-0 rounded-sm bg-[hsl(213_62%_26%/0.07)]" style={{ width: `${((r[m.bar] || 0) / max) * 100}%` }} aria-hidden />
                       <Link href={withView(`/pages/view?path=${encodeURIComponent(r.path)}`, linkQuery)} className="relative block truncate font-medium text-[hsl(var(--primary))] hover:underline" title={r.path}>{r.path === '/' ? 'Homepage (/)' : r.path}</Link>
                       {r.title && <span className="relative block truncate text-[11px] text-muted-foreground">{r.title}</span>}
+                      <span className="relative mt-0.5 flex flex-wrap gap-x-2.5 text-[11px]">
+                        {[['visits', 'Visits'], ['visitors', 'Visitors'], ['clicks', 'Clicks'], ['recordings', 'Recordings']].map(([t, l]) => (
+                          <Link key={t} href={withView(`/pages/view?path=${encodeURIComponent(r.path)}&tab=${t}`, linkQuery)} className="font-medium text-slate-500 hover:text-[hsl(var(--primary))] hover:underline">{l}</Link>
+                        ))}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{num(r.pageviews)}</TableCell>
                     <TableCell className="text-right tabular-nums">{num(r.visitors)}</TableCell>

@@ -1,8 +1,9 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { PlayCircle, Video, Smartphone, Monitor, Tablet, Settings2 } from 'lucide-react';
+import { PlayCircle, Video, Smartphone, Monitor, Tablet, Settings2, Search, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, duration, flag, timeAgo, toQuery, formatDateTime } from '@/lib/utils';
 import { useFilters } from '@/providers/FiltersProvider';
@@ -10,7 +11,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { PageHeader, EmptyState, ErrorState, Pagination, TableSkeleton } from '@/components/ui/feedback';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RangePicker } from '@/components/analytics/RangePicker';
 
@@ -23,7 +24,25 @@ export default function RecordingsPage() {
   const live = status === 'live';
   const [minSeconds, setMinSeconds] = useState(0);
   const [page, setPage] = useState(1);
-  const q = { ...query, status, min_seconds: minSeconds || undefined, page, limit: 25 };
+  // Page filter lives in the URL (?path=…) so a landing page's recordings can be bookmarked or linked to.
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const urlPath = params.get('path') || '';
+  const [pathInput, setPathInput] = useState(urlPath);
+  useEffect(() => { setPathInput(urlPath); }, [urlPath]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const v = pathInput.trim();
+      if (v === urlPath) return;
+      const next = new URLSearchParams(params.toString());
+      if (v) next.set('path', v); else next.delete('path');
+      router.replace(`${pathname}${next.toString() ? `?${next}` : ''}`, { scroll: false });
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [pathInput]); // eslint-disable-line react-hooks/exhaustive-deps
+  const q = { ...query, status, min_seconds: minSeconds || undefined, path: urlPath || undefined, page, limit: 25 };
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['replays', q], queryFn: () => api(`/replays${toQuery(q)}`), placeholderData: keepPreviousData, refetchInterval: 15_000,
   });
@@ -50,14 +69,19 @@ export default function RecordingsPage() {
             <span className={cn('h-2 w-2 rounded-full', live ? 'animate-pulse bg-white' : 'bg-[#d93025]')} />Live now
           </button>
         </div>
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input className="pl-8 pr-8" placeholder="Page contains… e.g. Eldeco-terra" value={pathInput} onChange={(e) => setPathInput(e.target.value)} aria-label="Filter recordings by page" />
+          {pathInput && <button type="button" onClick={() => setPathInput('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700" aria-label="Clear page filter"><X className="h-4 w-4" /></button>}
+        </div>
         <Select className="w-44" value={minSeconds} onChange={(e) => { setMinSeconds(Number(e.target.value)); setPage(1); }} aria-label="Minimum length">
           <option value={0}>Any length</option><option value={10}>Longer than 10 s</option><option value={30}>Longer than 30 s</option><option value={60}>Longer than 1 min</option><option value={300}>Longer than 5 min</option>
         </Select>
-        {data?.meta && <span className="ml-auto text-[12px] text-muted-foreground">{data.meta.total} recording{data.meta.total === 1 ? '' : 's'} · refreshes every 15 s</span>}
+        {data?.meta && <span className="ml-auto text-[12px] text-muted-foreground">{data.meta.total} recording{data.meta.total === 1 ? '' : 's'}{urlPath ? <> covering <b className="text-slate-700">“{urlPath}”</b></> : ''} · refreshes every 15 s</span>}
       </Card>
       <Card className="overflow-hidden">
         {error ? <ErrorState error={error} onRetry={refetch} /> : isLoading && !data ? <TableSkeleton rows={8} cols={7} /> : !data?.rows?.length ? (
-          <EmptyState icon={Video} title={live ? 'Nobody is on the site right now' : 'No completed recordings in this period'} description={live ? 'Live visits appear here within a few seconds of someone opening a page.' : 'A recording shows up here about a minute after the visitor finishes their visit. Visits still in progress are under “Live now”.'} />
+          <EmptyState icon={Video} title={urlPath ? `No recordings covering “${urlPath}” in this period` : live ? 'Nobody is on the site right now' : 'No completed recordings in this period'} description={live ? 'Live visits appear here within a few seconds of someone opening a page.' : 'A recording shows up here about a minute after the visitor finishes their visit. Visits still in progress are under “Live now”.'} />
         ) : (
           <Table>
             <TableHeader><TableRow><TableHead /><TableHead>Visitor</TableHead><TableHead>Started</TableHead><TableHead>Length</TableHead><TableHead>Pages</TableHead><TableHead>Device / location</TableHead><TableHead>Came from</TableHead></TableRow></TableHeader>

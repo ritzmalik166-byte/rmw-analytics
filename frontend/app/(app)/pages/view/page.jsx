@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useStats } from '@/lib/hooks';
@@ -12,11 +12,21 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RangePicker } from '@/components/analytics/RangePicker';
 import { Stat, StatGrid, ShareList, Question } from '@/components/analytics/Simple';
+import { PageTabBar, PageVisits, PageVisitors, PageClicks, PageRecordings, PAGE_TABS } from '@/components/analytics/PageActivity';
 
 const fmtDay = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' });
 
 export default function PageDetail() {
-  const path = useSearchParams().get('path') || '/';
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const path = params.get('path') || '/';
+  const tab = PAGE_TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'overview';
+  const setTab = (t) => {
+    const next = new URLSearchParams(params.toString());
+    if (t === 'overview') next.delete('tab'); else next.set('tab', t);
+    router.replace(`${pathname}?${next}`, { scroll: false });
+  };
   const { current, rangeLabel, linkQuery, setFilter } = useFilters();
   const { data, isLoading, error, refetch } = useStats('/stats/page', { path });
   const c = data?.current;
@@ -34,10 +44,15 @@ export default function PageDetail() {
         actions={<>
           {liveUrl && <Button variant="outline" size="sm" asChild><a href={liveUrl} target="_blank" rel="noreferrer"><ExternalLink />Open page</a></Button>}
           <Button variant="outline" size="sm" onClick={() => setFilter('page', path)} title="Show every report for visitors who viewed this page">Filter reports by this page</Button>
-          <RangePicker showCompare />
+          <RangePicker showCompare={tab === 'overview'} />
         </>}
       />
-      {error ? <Card><ErrorState error={error} onRetry={refetch} /></Card> : !loading && !c?.views && !p?.views ? (
+      <PageTabBar tab={tab} onTab={setTab} />
+      {tab === 'visits' ? <PageVisits path={path} />
+        : tab === 'visitors' ? <PageVisitors path={path} />
+        : tab === 'clicks' ? <PageClicks path={path} />
+        : tab === 'recordings' ? <PageRecordings path={path} />
+        : error ? <Card><ErrorState error={error} onRetry={refetch} /></Card> : !loading && !c?.views && !p?.views ? (
         <Card><EmptyState title="No views of this page in this period" description="Try a longer date range, or check the address. Paths are matched exactly, without the query string." /></Card>
       ) : (
         <>

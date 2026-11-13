@@ -18,6 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageSkeleton, Skeleton } from '@/components/ui/feedback';
 import { WebsiteDot } from '@/components/analytics/WebsiteDot';
+import { isMpfSite } from '@/lib/mpfLandingPages';
 
 /**
  * Navigation follows the questions a website owner asks: who visits (Visitors), where from (Traffic),
@@ -41,7 +42,7 @@ export const NAV = [
   ] },
   { title: 'Content', items: [
     { href: '/pages', label: 'Pages', icon: FileText },
-    { href: '/landing-pages', label: 'Landing pages', icon: LogIn },
+    { href: '/landing-pages', label: 'Landing pages', icon: LogIn, mpfOnly: true },
     { href: '/exit-pages', label: 'Exit pages', icon: ExitIcon },
   ] },
   { title: 'Engagement', items: [
@@ -188,7 +189,8 @@ function AlertBell() {
 function Shell({ children }) {
   const { me, can, switchOrg } = useAuth();
   const pathname = usePathname();
-  const { linkQuery } = useFilters();
+  const { linkQuery, current } = useFilters();
+  const mpf = isMpfSite(current);
   const [open, setOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState(null);
@@ -211,7 +213,7 @@ function Shell({ children }) {
               </button>
             ) : <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>)}
             <ul hidden={group.collapsible && !moreOpen}>
-              {group.items.filter((i) => !i.perm || can(i.perm)).map((item) => {
+              {group.items.filter((i) => (!i.perm || can(i.perm)) && (!i.mpfOnly || mpf)).map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <li key={item.href}>
