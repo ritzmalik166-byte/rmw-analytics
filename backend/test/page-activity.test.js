@@ -61,12 +61,15 @@ test('page activity: visitors groups views per person', async () => {
   assert.ok(new Date(p.firstAt) <= new Date(p.lastAt));
 });
 
-test('page activity: clicks lists actions on the page in plain words', async () => {
+test('page activity: clicks lists one row per person with their actions in plain words', async () => {
   const r = await q('clicks');
   assert.equal(r.status, 200);
-  const labels = r.data.rows.map((c) => c.label);
+  const visitors = r.data.rows.map((c) => c.visitorId);
+  assert.equal(new Set(visitors).size, visitors.length, 'one row per person');
+  const labels = r.data.rows.flatMap((c) => c.actions);
   assert.ok(labels.includes('Clicked “Enquire now”'), labels.join(' | '));
   assert.ok(labels.includes('Opened WhatsApp chat'));
+  assert.equal(r.data.rows.reduce((n, c) => n + c.clicks, 0) >= r.data.rows.length, true);
   assert.ok(!labels.some((l) => l.includes('Menu')), 'clicks on other pages excluded');
   const contact = await q('clicks', '&kind=contact');
   assert.deepEqual(contact.data.rows.map((c) => c.name), ['whatsapp_click']);

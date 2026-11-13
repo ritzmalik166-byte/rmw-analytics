@@ -108,24 +108,46 @@ function detailOf(e) {
   return p.text || null;
 }
 
+/**
+ * One row per genuine person who clicked on the page (not one row per click): their latest click,
+ * how many clicks they made and the distinct things they clicked. Bots/crawlers/headless browsers are excluded.
+ */
 export async function pageClicks(scope, path, { kind, page, limit, skip }) {
   const { websiteIds, websites, range } = scope;
   const extra = await sessionClause(scope, range.from, range.to);
-  const names = kind === 'frustration' ? ['rage_click', 'dead_click'] : kind === 'contact' ? ['phone_click', 'email_click', 'whatsapp_click', 'contact_click'] : kind === 'forms' ? ['form_start', 'form_submit', 'form_error', 'lead'] : CLICK_EVENTS;
-  const filter = { websiteId: { $in: websiteIds }, 'page.path': path, ts: { $gte: range.from, $lte: range.to }, name: { $in: names }, ...extra };
-  const [rows, total] = await Promise.all([
-    col('events').find(filter).sort({ ts: -1 }).skip(skip).limit(limit).project({ websiteId: 1, ts: 1, name: 1, props: 1, visitorId: 1, sessionId: 1 }).toArray(),
-    col('events').countDocuments(filter),
-  ]);
-  const ctx = await contextFor(rows);
+  const names = kind === 'frustration' ? ['rage_click', 'dead_click'] : kind === 'contact' ? ['phone_click', 'email_click', 'whatsapp_click', 'contact_click'] : kind === 'forms' ? ['form_start', 'form_submit', 'form_error', 'lead'] : CLICK_EVENTS.filter((n) => n !== 'dead_click'); // clicks on non-clickable spots aren't real actions
+  const filter = {
+    websiteId: { $in: websiteIds }, 'page.path': path, ts: { $gte: range.from, $lte: range.to }, name: { $in: names },
+    'device.type': { $ne: 'bot' }, ...extra,
+  };
+  const [res] = await col('events').aggregate([
+    { $match: filter },
+    { $sort: { ts: -1 } },
+    { $group: {
+      _id: { w: '$websiteId', v: '$visitorId' },
+      latest: { $first: { ts: '$ts', name: '$name', props: '$props', sessionId: '$sessionId' } },
+      firstAt: { $last: '$ts' },
+      clicks: { $sum: 1 },
+      actions: { $push: { name: '$name', props: '$props' } },
+    } },
+    { $sort: { 'latest.ts': -1 } },
+    { $facet: { rows: [{ $skip: skip }, { $limit: limit }], total: [{ $count: 'n' }] } },
+  ], { allowDiskUse: true }).toArray();
+  const groups = res?.rows || [];
+  const total = res?.total?.[0]?.n || 0;
+  const ctx = await contextFor(groups.map((g) => ({ websiteId: g._id.w, sessionId: g.latest.sessionId })));
   return {
-    rows: rows.map((e) => {
+    rows: groups.map((g) => {
+      const e = { ...g.latest, websiteId: g._id.w };
       const k = key(e.websiteId, e.sessionId);
       const s = ctx.sessions.get(k);
+      const labels = [...new Set(g.actions.map((a) => actionLabel(a.name, detailOf(a))))];
       return {
-        at: e.ts, websiteId: String(e.websiteId), website: websiteOf(websites, e.websiteId)?.code || null, name: e.name,
+        at: e.ts, firstAt: g.firstAt, websiteId: String(e.websiteId), website: websiteOf(websites, e.websiteId)?.code || null, name: e.name,
         label: actionLabel(e.name, detailOf(e)), selector: e.props?.selector || e.props?.tag || null, href: e.props?.href || null,
-        visitorId: e.visitorId, sessionId: e.sessionId, device: s?.device?.type || null, city: s?.geo?.city || null, country: s?.geo?.country || null,
+        clicks: g.clicks, actions: labels.slice(0, 6), moreActions: Math.max(0, labels.length - 6),
+        visitorId: g._id.v, sessionId: e.sessionId, device: s?.device?.type || null,
+        locality: s?.geo?.locality || null, city: s?.geo?.city || null, country: s?.geo?.country || null,
         hasRecording: ctx.replays.has(k),
       };
     }),
